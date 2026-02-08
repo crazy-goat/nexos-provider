@@ -2,40 +2,19 @@
 
 Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://nexos.ai) Gemini models with [opencode](https://opencode.ai).
 
-## Problem
+## What it does
 
-When accessing Gemini models through the nexos.ai API proxy, two issues prevent them from working with opencode (and likely other AI SDK-based tools):
-
-1. **Missing `data: [DONE]` in SSE streaming** — Gemini responses via nexos don't emit the standard `data: [DONE]` signal at the end of a streaming response. The AI SDK's `EventSourceParserStream` waits indefinitely for more data, causing opencode to hang forever.
-
-2. **`$ref` in tool schemas** — opencode sends JSON Schemas with `$ref` / `$defs` for tool parameters. Gemini (Vertex AI) rejects these with: `Schema.ref was set alongside unsupported fields`.
-
-## Solution
-
-This provider wraps `@ai-sdk/openai-compatible` and intercepts `fetch` to:
-
-- **Append `data: [DONE]\n\n`** to the end of streaming responses from Gemini models (via a `TransformStream` flush handler)
-- **Inline `$ref` references** in tool parameter schemas before sending them to the API
-
-No proxy, no extra processes — everything runs inline inside opencode.
+Gemini models via nexos.ai have two issues that break opencode: missing `data: [DONE]` in SSE streams (causes hanging) and `$ref` in tool schemas (rejected by Vertex AI). This provider wraps `@ai-sdk/openai-compatible` and fixes both by appending the `[DONE]` signal and inlining `$ref` references before sending. Other models available through nexos.ai (GPT, Claude, etc.) are called directly without any modifications.
 
 ## Setup
 
-### 1. Clone this repo
-
-```bash
-git clone <this-repo> ~/nexos-provider
-cd ~/nexos-provider
-npm install
-```
-
-### 2. Set your API key
+### 1. Set your API key
 
 ```bash
 export NEXOS_API_KEY="your-nexos-api-key"
 ```
 
-### 3. Configure opencode
+### 2. Configure opencode
 
 Add the provider to your `~/.config/opencode/opencode.json`:
 
@@ -43,9 +22,9 @@ Add the provider to your `~/.config/opencode/opencode.json`:
 {
   "$schema": "https://opencode.ai/config.json",
   "provider": {
-    "nexos-gemini": {
-      "npm": "file:///absolute/path/to/nexos-provider/index.mjs",
-      "name": "Nexos Gemini",
+    "nexos-ai": {
+      "npm": "@crazy-goat/nexos-provider",
+      "name": "Nexos AI",
       "env": ["NEXOS_API_KEY"],
       "options": {
         "baseURL": "https://api.nexos.ai/v1/",
@@ -70,57 +49,40 @@ Add the provider to your `~/.config/opencode/opencode.json`:
 }
 ```
 
-> **Note:** The `npm` path must be an absolute `file://` URL pointing to `index.mjs`.
+> **Tip:** You can automatically generate the config with all available nexos.ai models using [opencode-nexos-models-config](https://github.com/crazy-goat/opencode-nexos-models-config).
 
-### 4. Use it
+> **Warning:** Gemini 3 models (Flash Preview, Pro Preview) are currently unavailable — tool calling through nexos.ai does not work for these models.
 
+### 3. Use it
+
+Simple prompt:
 ```bash
-opencode run "hello" -m "nexos-gemini/Gemini 2.5 Pro"
+opencode run "hello" -m "nexos-ai/Gemini 2.5 Pro"
+```
+
+With tool calling:
+```bash
+opencode run "list files in current directory" -m "nexos-ai/Gemini 2.5 Pro"
 ```
 
 Or select the model interactively in opencode with `Ctrl+X M`.
-
-## GPT and Claude models
-
-GPT and Claude models work fine through nexos.ai without this provider — they correctly emit `data: [DONE]` and handle `$ref` schemas. Use the standard `@ai-sdk/openai-compatible` provider for those:
-
-```json
-{
-  "nexos-ai": {
-    "npm": "@ai-sdk/openai-compatible",
-    "name": "Nexos AI",
-    "env": ["NEXOS_API_KEY"],
-    "options": {
-      "baseURL": "https://api.nexos.ai/v1/",
-      "timeout": 300000
-    },
-    "models": {
-      "Claude Opus 4.6": {
-        "name": "Claude Opus 4.6",
-        "limit": { "context": 128000, "output": 64000 }
-      },
-      "GPT 5.2": {
-        "name": "GPT 5.2",
-        "limit": { "context": 128000, "output": 64000 }
-      }
-    }
-  }
-}
-```
 
 ## How it works
 
 The provider exports `createNexosAI` which creates a standard AI SDK provider with a custom `fetch` wrapper:
 
 ```
-Request flow:
+Gemini models:
   opencode → createNexosAI → fetch wrapper → nexos.ai API
                                  │
-                                 ├─ Resolves $ref in tool schemas (for Gemini)
-                                 └─ Appends data: [DONE] to SSE stream (for Gemini)
+                                 ├─ Resolves $ref in tool schemas
+                                 └─ Appends data: [DONE] to SSE stream
+
+Other models (GPT, Claude, etc.):
+  opencode → createNexosAI → fetch (no modifications) → nexos.ai API
 ```
 
-Only Gemini model requests are modified — all other models pass through unchanged.
+The provider detects Gemini models by name and only applies fixes for them. GPT, Claude, and other models pass through the fetch wrapper unchanged — they already handle `[DONE]` signals and `$ref` schemas correctly.
 
 ## License
 

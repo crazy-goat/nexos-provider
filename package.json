@@ -1,15 +1,13 @@
 {
   "name": "@crazy-goat/nexos-provider",
-  "version": "1.1.0",
+  "version": "1.2.2",
   "description": "Custom AI SDK provider for nexos.ai Gemini models in opencode",
   "type": "module",
   "main": "index.mjs",
   "exports": {
     ".": "./index.mjs"
   },
-  "bin": {
-    "nexos-models": "./list-models.mjs"
-  },
+  "bin": "./list-models.mjs",
   "scripts": {
     "list-models": "node list-models.mjs"
   },
