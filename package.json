@@ -1,0 +1,32 @@
+{
+  "name": "@crazy-goat/nexos-provider",
+  "version": "1.0.0",
+  "description": "Custom AI SDK provider for nexos.ai Gemini models in opencode",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "files": [
+    "index.mjs"
+  ],
+  "keywords": [
+    "opencode",
+    "ai-sdk",
+    "nexos",
+    "gemini",
+    "provider"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crazy-goat/nexos-provider.git"
+  },
+  "homepage": "https://github.com/crazy-goat/nexos-provider",
+  "bugs": {
+    "url": "https://github.com/crazy-goat/nexos-provider/issues"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "1.0.32"
+  }
+}
