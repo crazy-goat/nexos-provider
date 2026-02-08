@@ -7,8 +7,15 @@
   "exports": {
     ".": "./index.mjs"
   },
+  "bin": {
+    "nexos-models": "./list-models.mjs"
+  },
+  "scripts": {
+    "list-models": "node list-models.mjs"
+  },
   "files": [
-    "index.mjs"
+    "index.mjs",
+    "list-models.mjs"
   ],
   "keywords": [
     "opencode",
