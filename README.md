@@ -93,6 +93,16 @@ opencode run "what is 2+2?" -m "nexos-ai/GPT 5" --variant high
 
 Or select the model interactively in opencode with `Ctrl+X M`.
 
+## Updating
+
+opencode caches the provider in `~/.cache/opencode/`. To force an update to the latest version:
+
+```bash
+rm -rf ~/.cache/opencode/node_modules ~/.cache/opencode/bun.lock
+```
+
+The next time you run opencode, it will download the latest version from npm.
+
 ## How it works
 
 The provider exports `createNexosAI` which creates a standard AI SDK provider with a custom `fetch` wrapper. Per-provider fixes are in separate modules:
