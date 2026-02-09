@@ -1,69 +1,13 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { isGeminiModel, fixGeminiRequest, fixGeminiStream } from "./fix-gemini.mjs";
+import { fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
+import { fixChatGPTRequest, fixChatGPTStream } from "./fix-chatgpt.mjs";
 
-function resolveRefs(schema, defs) {
-  if (!schema || typeof schema !== "object") return schema;
-  if (Array.isArray(schema)) return schema.map((s) => resolveRefs(s, defs));
-
-  if (schema.$ref || schema.ref) {
-    const refName = (schema.$ref || schema.ref)
-      .replace(/^#\/\$defs\//, "")
-      .replace(/^#\/definitions\//, "");
-    const resolved = defs?.[refName];
-    if (resolved) {
-      const merged = { ...resolveRefs(resolved, defs) };
-      if (schema.description) merged.description = schema.description;
-      if (schema.default !== undefined) merged.default = schema.default;
-      return merged;
-    }
-  }
-
-  const result = {};
-  for (const [k, v] of Object.entries(schema)) {
-    if (k === "$defs" || k === "definitions" || k === "$ref" || k === "ref")
-      continue;
-    result[k] = resolveRefs(v, defs);
-  }
-  return result;
-}
-
-function fixToolSchemas(body) {
-  if (!body.tools?.length) return body;
-  return {
-    ...body,
-    tools: body.tools.map((tool) => {
-      if (tool.type !== "function" || !tool.function?.parameters) return tool;
-      const params = tool.function.parameters;
-      const defs = params.$defs || params.definitions || {};
-      return {
-        ...tool,
-        function: {
-          ...tool.function,
-          parameters: resolveRefs(params, defs),
-        },
-      };
-    }),
-  };
-}
-
-function fixFinishReason(text) {
-  return text.replace(/data: ({.*})\n/g, (match, jsonStr) => {
-    try {
-      const parsed = JSON.parse(jsonStr);
-      let changed = false;
-      if (parsed.choices) {
-        for (const choice of parsed.choices) {
-          if (choice.finish_reason === "stop" && choice.delta?.tool_calls?.length) {
-            choice.finish_reason = "tool_calls";
-            changed = true;
-          }
-        }
-      }
-      if (changed) {
-        return "data: " + JSON.stringify(parsed) + "\n";
-      }
-    } catch {}
-    return match;
-  });
+function fixStreamChunk(text) {
+  text = fixGeminiStream(text);
+  text = fixClaudeStream(text);
+  text = fixChatGPTStream(text);
+  return text;
 }
 
 function appendDoneToStream() {
@@ -75,7 +19,7 @@ function appendDoneToStream() {
       let text =
         typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
       if (text.includes("[DONE]")) sawDone = true;
-      text = fixFinishReason(text);
+      text = fixStreamChunk(text);
       controller.enqueue(encoder.encode(text));
     },
     flush(controller) {
@@ -84,10 +28,6 @@ function appendDoneToStream() {
       }
     },
   });
-}
-
-function isGeminiModel(model) {
-  return typeof model === "string" && model.toLowerCase().includes("gemini");
 }
 
 function createNexosFetch(baseFetch) {
@@ -102,17 +42,25 @@ function createNexosFetch(baseFetch) {
     }
 
     const gemini = isGeminiModel(requestBody.model);
+    let needsStreamFix = gemini;
 
     if (gemini) {
-      if (requestBody.tools) {
-        requestBody = fixToolSchemas(requestBody);
-      }
+      requestBody = fixGeminiRequest(requestBody);
+    }
+
+    const claudeResult = fixClaudeRequest(requestBody);
+    requestBody = claudeResult.body;
+    if (claudeResult.hadThinking) needsStreamFix = true;
+
+    requestBody = fixChatGPTRequest(requestBody);
+
+    if (gemini || claudeResult.hadThinking) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 
     const response = await realFetch(url, init);
 
-    if (gemini && requestBody.stream) {
+    if (needsStreamFix && requestBody.stream) {
       const fixedBody = response.body.pipeThrough(appendDoneToStream());
       return new Response(fixedBody, {
         status: response.status,
