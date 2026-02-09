@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.2] - 2025
+
+### Removed
+- Removed `list-models.mjs` CLI tool (use [opencode-nexos-models-config](https://github.com/crazy-goat/opencode-nexos-models-config) instead).
+
+### Changed
+- Added update instructions to README.
+- Cleaned up `package.json` (`bin`, `scripts` fields removed).
+
 ## [1.3.1] - 2025
 
 ### Fixed
