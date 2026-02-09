@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { isGeminiModel, fixGeminiRequest, fixGeminiStream } from "./fix-gemini.mjs";
+import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
 import { fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
 import { fixChatGPTRequest, fixChatGPTStream } from "./fix-chatgpt.mjs";
 
@@ -46,15 +46,20 @@ function createNexosFetch(baseFetch) {
 
     if (gemini) {
       requestBody = fixGeminiRequest(requestBody);
+      const geminiThinking = fixGeminiThinkingRequest(requestBody);
+      requestBody = geminiThinking.body;
+      if (geminiThinking.hadThinking) needsStreamFix = true;
     }
 
     const claudeResult = fixClaudeRequest(requestBody);
     requestBody = claudeResult.body;
     if (claudeResult.hadThinking) needsStreamFix = true;
 
+    const beforeChatGPT = requestBody;
     requestBody = fixChatGPTRequest(requestBody);
+    const chatgptChanged = requestBody !== beforeChatGPT;
 
-    if (gemini || claudeResult.hadThinking) {
+    if (gemini || claudeResult.hadThinking || chatgptChanged) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 

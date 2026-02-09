@@ -54,6 +54,24 @@ export function fixGeminiRequest(body) {
   return body;
 }
 
+export function fixGeminiThinkingRequest(body) {
+  if (!body.thinking) return { body, hadThinking: false };
+  if (body.thinking.type === "disabled") {
+    const { thinking, ...rest } = body;
+    return { body: rest, hadThinking: true };
+  }
+  const thinking = { ...body.thinking };
+  if (thinking.budgetTokens !== undefined && thinking.budget_tokens === undefined) {
+    thinking.budget_tokens = thinking.budgetTokens;
+    delete thinking.budgetTokens;
+  }
+  const result = { ...body, thinking };
+  if (thinking.budget_tokens && result.max_tokens && result.max_tokens <= thinking.budget_tokens) {
+    result.max_tokens = thinking.budget_tokens + 4096;
+  }
+  return { body: result, hadThinking: true };
+}
+
 export function fixGeminiStream(text) {
   return text.replace(/data: ({.*})\n/g, (match, jsonStr) => {
     try {
@@ -61,8 +79,23 @@ export function fixGeminiStream(text) {
       let changed = false;
       if (parsed.choices) {
         for (const choice of parsed.choices) {
+          if (choice.finish_reason === "STOP") {
+            choice.finish_reason = "stop";
+            changed = true;
+          }
           if (choice.finish_reason === "stop" && choice.delta?.tool_calls?.length) {
             choice.finish_reason = "tool_calls";
+            changed = true;
+          }
+          const blocks = choice.delta?.content_blocks;
+          if (blocks?.length) {
+            for (const block of blocks) {
+              if (block.delta?.thinking) {
+                choice.delta.reasoning_content = block.delta.thinking;
+                changed = true;
+              }
+            }
+            delete choice.delta.content_blocks;
             changed = true;
           }
         }

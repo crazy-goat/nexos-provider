@@ -5,9 +5,9 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 ## Project Structure
 
 - `index.mjs` — Main provider module, exports `createNexosAI`, imports per-provider fix modules
-- `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, `stop`→`tool_calls` finish reason)
+- `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
 - `fix-claude.mjs` — Claude-specific fixes (thinking params normalization, `end_turn`→`stop` finish reason)
-- `fix-chatgpt.mjs` — ChatGPT-specific fixes (passthrough, ready for future fixes)
+- `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
@@ -21,6 +21,11 @@ Fixes issues when using models through nexos.ai API:
 1. **Missing `data: [DONE]` in SSE streaming** — Gemini responses via nexos don't emit the `[DONE]` signal. The provider appends it via a `TransformStream` flush handler.
 2. **`$ref` in tool schemas** — Gemini (Vertex AI) rejects JSON Schemas with `$ref`/`$defs`. The provider inlines all `$ref` references before sending.
 3. **Wrong `finish_reason` for tool calls** — Gemini returns `stop` instead of `tool_calls` when tool calls are present. The provider fixes this in the SSE stream.
+4. **`finish_reason: "STOP"` (uppercase)** — With thinking enabled, Gemini returns `STOP` instead of `stop`. The provider normalizes it to lowercase.
+5. **`budgetTokens` → `budget_tokens`** — Same as Claude: opencode sends camelCase, API expects snake_case. The provider converts automatically.
+6. **`type: "disabled"` thinking removal** — Same as Claude: strips the entire `thinking` object when `type === "disabled"`.
+7. **Gemini 3 models + tool use** — Gemini 3 Preview models require `thought_signature` for multi-turn tool-use conversations. This is a nexos/Vertex AI limitation, not fixable in the provider. Tool use with Gemini 3 models does NOT work.
+8. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
 
 ### Claude
 1. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
@@ -28,7 +33,7 @@ Fixes issues when using models through nexos.ai API:
 3. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
 
 ### ChatGPT
-No fixes currently needed — `reasoningEffort` is handled natively by opencode.
+1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
 
 ## Architecture
 
@@ -37,15 +42,16 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │
                                     ├─ fix-gemini.mjs
                                     │   ├─ fixGeminiRequest(): inlines $ref in tool schemas
-                                    │   └─ fixGeminiStream(): stop→tool_calls finish reason
+                                    │   ├─ fixGeminiThinkingRequest(): thinking params (camelCase→snake_case, disabled removal)
+                                    │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
                                     │
                                     ├─ fix-claude.mjs
                                     │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal)
                                     │   └─ fixClaudeStream(): end_turn→stop finish reason
                                     │
-                                    ├─ fix-chatgpt.mjs
-                                    │   ├─ fixChatGPTRequest(): passthrough
-                                    │   └─ fixChatGPTStream(): passthrough
+                    ├─ fix-chatgpt.mjs
+                    │   ├─ fixChatGPTRequest(): strips reasoning_effort:"none"
+                    │   └─ fixChatGPTStream(): passthrough
                                     │
                                     └─ appendDoneToStream(): adds data: [DONE]\n\n via TransformStream
 ```
@@ -72,14 +78,21 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 - Functional style, no classes
 - Per-provider fixes in separate files (`fix-*.mjs`), composed in `index.mjs`
 
+## Variant Naming Convention
+
+- Thinking/reasoning variants MUST be named exactly `low` and `high` — never `thinking-low`, `thinking-high`, etc.
+- Do NOT add `no-thinking` or `no-reasoning` variants — opencode adds these automatically.
+- For ChatGPT models, reasoning effort variants are also named `low` and `high`.
+
 ## When Making Changes
 
-- Test with all three Gemini models: `Gemini 2.5 Pro`, `Gemini 3 Flash Preview`, `Gemini 3 Pro Preview`
+- Test with all Gemini models: `Gemini 2.5 Pro`, `Gemini 2.5 Flash`, `Gemini 3 Flash Preview`, `Gemini 3 Pro Preview`
 - Test Claude models with thinking variants: `Claude Sonnet 4.5`, `Claude Opus 4.5`
 - Test ChatGPT models with reasoning effort: `GPT 5`, `GPT 5.2`, `GPT 4.1`
 - Test both simple prompts (`what is 2+2?`) and tool-use prompts (`list files in current directory`)
 - Test command: `opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro"`
 - Claude thinking test: `opencode run "what is 2+2?" -m "nexos-ai/Claude Sonnet 4.5" --variant thinking-high`
+- Gemini thinking test: `opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro" --variant thinking-high`
 - Use `test-thinking/` directory with its `opencode.json` for thinking/reasoning tests
 - Use `test-thinking/debug-proxy.mjs` to inspect request/response bodies (change `baseURL` to `http://localhost:9999/v1/`)
 - Automated Claude thinking test: `bash cache/test-claude-thinking.sh`
