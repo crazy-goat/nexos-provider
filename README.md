@@ -105,6 +105,30 @@ opencode → createNexosAI → fetch wrapper → nexos.ai API
                                └─ fix-chatgpt.mjs: passthrough (no fixes needed)
 ```
 
+## Testing
+
+Test with a simple prompt:
+```bash
+opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro"
+opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Flash"
+opencode run "what is 2+2?" -m "nexos-ai/Claude Sonnet 4.5"
+opencode run "what is 2+2?" -m "nexos-ai/GPT 5"
+```
+
+Test tool calling:
+```bash
+opencode run "list files in current directory" -m "nexos-ai/Gemini 2.5 Pro"
+opencode run "list files in current directory" -m "nexos-ai/Claude Sonnet 4.5"
+opencode run "list files in current directory" -m "nexos-ai/GPT 5"
+```
+
+Test thinking/reasoning variants:
+```bash
+opencode run "what is 2+2?" -m "nexos-ai/Claude Sonnet 4.5" --variant thinking-high
+opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro" --variant thinking-high
+opencode run "what is 2+2?" -m "nexos-ai/GPT 5" --variant high
+```
+
 ## License
 
 MIT

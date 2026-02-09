@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2025
+
+### Fixed
+- Include `fix-gemini.mjs`, `fix-claude.mjs`, and `fix-chatgpt.mjs` in published npm package (missing from `files` field since 1.2.2).
+
 ## [1.3.0] - 2025
 
 ### Added
