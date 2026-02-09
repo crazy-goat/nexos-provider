@@ -1,10 +1,14 @@
 # nexos-provider
 
-Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://nexos.ai) Gemini models with [opencode](https://opencode.ai).
+Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://nexos.ai) models with [opencode](https://opencode.ai).
 
 ## What it does
 
-Gemini models via nexos.ai have two issues that break opencode: missing `data: [DONE]` in SSE streams (causes hanging) and `$ref` in tool schemas (rejected by Vertex AI). This provider wraps `@ai-sdk/openai-compatible` and fixes both by appending the `[DONE]` signal and inlining `$ref` references before sending. Other models available through nexos.ai (GPT, Claude, etc.) are called directly without any modifications.
+Fixes compatibility issues when using Gemini, Claude, and ChatGPT models through nexos.ai API in opencode:
+
+- **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
+- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled
+- **ChatGPT**: no fixes needed — `reasoningEffort` is handled natively by opencode
 
 ## Setup
 
@@ -35,13 +39,25 @@ Add the provider to your `~/.config/opencode/opencode.json`:
           "name": "Gemini 2.5 Pro",
           "limit": { "context": 128000, "output": 64000 }
         },
-        "Gemini 3 Flash Preview": {
-          "name": "Gemini 3 Flash Preview",
-          "limit": { "context": 128000, "output": 64000 }
+        "Claude Sonnet 4.5": {
+          "name": "Claude Sonnet 4.5",
+          "limit": { "context": 200000, "output": 16000 },
+          "options": {
+            "thinking": { "type": "enabled", "budgetTokens": 1024 }
+          },
+          "variants": {
+            "thinking-high": { "thinking": { "type": "enabled", "budgetTokens": 10000 } },
+            "no-thinking": { "thinking": { "type": "disabled" } }
+          }
         },
-        "Gemini 3 Pro Preview": {
-          "name": "Gemini 3 Pro Preview",
-          "limit": { "context": 128000, "output": 64000 }
+        "GPT 5": {
+          "name": "GPT 5",
+          "limit": { "context": 400000, "output": 128000 },
+          "options": { "reasoningEffort": "medium" },
+          "variants": {
+            "high": { "reasoningEffort": "high" },
+            "no-reasoning": { "reasoningEffort": "none" }
+          }
         }
       }
     }
@@ -65,24 +81,29 @@ With tool calling:
 opencode run "list files in current directory" -m "nexos-ai/Gemini 2.5 Pro"
 ```
 
+Claude with thinking:
+```bash
+opencode run "what is 2+2?" -m "nexos-ai/Claude Sonnet 4.5" --variant thinking-high
+```
+
+GPT with reasoning effort:
+```bash
+opencode run "what is 2+2?" -m "nexos-ai/GPT 5" --variant high
+```
+
 Or select the model interactively in opencode with `Ctrl+X M`.
 
 ## How it works
 
-The provider exports `createNexosAI` which creates a standard AI SDK provider with a custom `fetch` wrapper:
+The provider exports `createNexosAI` which creates a standard AI SDK provider with a custom `fetch` wrapper. Per-provider fixes are in separate modules:
 
 ```
-Gemini models:
-  opencode → createNexosAI → fetch wrapper → nexos.ai API
-                                 │
-                                 ├─ Resolves $ref in tool schemas
-                                 └─ Appends data: [DONE] to SSE stream
-
-Other models (GPT, Claude, etc.):
-  opencode → createNexosAI → fetch (no modifications) → nexos.ai API
+opencode → createNexosAI → fetch wrapper → nexos.ai API
+                               │
+                               ├─ fix-gemini.mjs: $ref inlining, finish_reason fix
+                               ├─ fix-claude.mjs: thinking params, end_turn→stop
+                               └─ fix-chatgpt.mjs: passthrough (no fixes needed)
 ```
-
-The provider detects Gemini models by name and only applies fixes for them. GPT, Claude, and other models pass through the fetch wrapper unchanged — they already handle `[DONE]` signals and `$ref` schemas correctly.
 
 ## License
 
