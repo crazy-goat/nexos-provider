@@ -143,7 +143,7 @@ opencode run "what is 2+2?" -m "nexos-ai/GPT 5" --variant high
 
 ### Automated model check
 
-Run `check-models/check-all.mjs` to test all available models:
+Run `check-models/check-all.mjs` to test all available models for simple prompts and tool calling:
 
 ```bash
 node check-models/check-all.mjs
@@ -154,7 +154,14 @@ Test a single model:
 node check-models/check-all.mjs "GPT 4.1"
 ```
 
-Results are saved to `check-models/checks.md`.
+Results are saved to [`check-models/checks.md`](check-models/checks.md) — see current compatibility status there.
+
+## Known Bugs
+
+The `known-bugs/` directory contains documentation and test scripts for known API issues:
+
+- **[gemini3-tools](known-bugs/gemini3-tools/)** — Gemini 3 models (Flash Preview, Pro Preview) fail on multi-turn tool calling due to missing `thought_signature` support in nexos.ai API
+- **[thinking](known-bugs/thinking/)** — Test script for thinking/reasoning blocks across models
 
 ## License
 
