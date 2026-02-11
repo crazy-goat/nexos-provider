@@ -106,8 +106,29 @@ https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
 
 Alternatively, nexos could inject `skip_thought_signature_validator` server-side for Gemini 3 models when the client does not provide a thought_signature.
 
+## Test script
+
+Run `test-tool-call.sh` to test multi-turn tool calling across Gemini models:
+
+```bash
+./test-tool-call.sh
+```
+
+Output shows which models pass/fail each step:
+
+```
+=== Multi-turn tool calling test ===
+
+   MODEL                         STEP1      STEP2 NOTES
+   ------------------------- ---------- ---------- ------------------------------
+✅ Gemini 2.5 Pro                    OK         OK 
+✅ Gemini 2.5 Flash                  OK         OK 
+⚠️  Gemini 3 Flash Preview            OK      ERROR error: Unable to submit request because function
+⚠️  Gemini 3 Pro Preview              OK      ERROR error: Unable to submit request because function
+```
+
 ## Reference
 
 - https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
 - Affected models: `Gemini 3 Flash Preview`, `Gemini 3 Pro Preview`
-- Not affected: `Gemini 2.5 Pro`
+- Not affected: `Gemini 2.5 Pro`, `Gemini 2.5 Flash`
