@@ -119,12 +119,12 @@ Output shows which models pass/fail each step:
 ```
 === Multi-turn tool calling test ===
 
-   MODEL                         STEP1      STEP2 NOTES
+   MODEL                          STEP1      STEP2 NOTES
    ------------------------- ---------- ---------- ------------------------------
 ✅ Gemini 2.5 Pro                    OK         OK 
 ✅ Gemini 2.5 Flash                  OK         OK 
-⚠️  Gemini 3 Flash Preview            OK      ERROR error: Unable to submit request because function
-⚠️  Gemini 3 Pro Preview              OK      ERROR error: Unable to submit request because function
+⚠️  Gemini 3 Flash Preview            OK      ERROR error: Unable to submit request because function call `bash`
+⚠️  Gemini 3 Pro Preview              OK      ERROR error: Unable to submit request because function call `bash`
 ```
 
 ## Reference
