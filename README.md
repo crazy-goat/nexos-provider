@@ -9,6 +9,7 @@ Fixes compatibility issues when using Gemini, Claude, and ChatGPT models through
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
 - **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled
 - **ChatGPT**: no fixes needed — `reasoningEffort` is handled natively by opencode
+- **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
 
 ## Setup
 
@@ -67,7 +68,7 @@ Add the provider to your `~/.config/opencode/opencode.json`:
 
 > **Tip:** You can automatically generate the config with all available nexos.ai models using [opencode-nexos-models-config](https://github.com/crazy-goat/opencode-nexos-models-config).
 
-> **Warning:** Gemini 3 models (Flash Preview, Pro Preview) are currently unavailable — tool calling through nexos.ai does not work for these models.
+> **Warning:** Gemini 3 models (Flash Preview, Pro Preview) do not work with tool calling through nexos.ai — see [known-bugs/gemini3-tools](known-bugs/gemini3-tools/) for details.
 
 ### 3. Use it
 
@@ -112,7 +113,8 @@ opencode → createNexosAI → fetch wrapper → nexos.ai API
                                │
                                ├─ fix-gemini.mjs: $ref inlining, finish_reason fix
                                ├─ fix-claude.mjs: thinking params, end_turn→stop
-                               └─ fix-chatgpt.mjs: passthrough (no fixes needed)
+                               ├─ fix-chatgpt.mjs: passthrough (no fixes needed)
+                               └─ fix-codestral.mjs: strict:null→false in tools
 ```
 
 ## Testing

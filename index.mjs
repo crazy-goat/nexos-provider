@@ -2,11 +2,13 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
 import { fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
 import { fixChatGPTRequest, fixChatGPTStream } from "./fix-chatgpt.mjs";
+import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
 
 function fixStreamChunk(text) {
   text = fixGeminiStream(text);
   text = fixClaudeStream(text);
   text = fixChatGPTStream(text);
+  text = fixCodestralStream(text);
   return text;
 }
 
@@ -42,13 +44,21 @@ function createNexosFetch(baseFetch) {
     }
 
     const gemini = isGeminiModel(requestBody.model);
+    const codestral = isCodestralModel(requestBody.model);
     let needsStreamFix = gemini;
+    let bodyChanged = false;
 
     if (gemini) {
       requestBody = fixGeminiRequest(requestBody);
       const geminiThinking = fixGeminiThinkingRequest(requestBody);
       requestBody = geminiThinking.body;
       if (geminiThinking.hadThinking) needsStreamFix = true;
+      bodyChanged = true;
+    }
+
+    if (codestral) {
+      requestBody = fixCodestralRequest(requestBody);
+      bodyChanged = true;
     }
 
     const claudeResult = fixClaudeRequest(requestBody);
@@ -59,7 +69,7 @@ function createNexosFetch(baseFetch) {
     requestBody = fixChatGPTRequest(requestBody);
     const chatgptChanged = requestBody !== beforeChatGPT;
 
-    if (gemini || claudeResult.hadThinking || chatgptChanged) {
+    if (gemini || codestral || claudeResult.hadThinking || chatgptChanged) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 

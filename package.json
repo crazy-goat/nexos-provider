@@ -11,7 +11,8 @@
     "index.mjs",
     "fix-gemini.mjs",
     "fix-claude.mjs",
-    "fix-chatgpt.mjs"
+    "fix-chatgpt.mjs",
+    "fix-codestral.mjs"
   ],
   "keywords": [
     "opencode",
