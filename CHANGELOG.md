@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.4] - 2025
+
+### Fixed
+- Include README.md in npm package.
+
 ## [1.3.3] - 2025
 
 ### Added
