@@ -12,6 +12,8 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
+- `check-models/` — Automated model compatibility testing script
+- `known-bugs/` — Documentation and test scripts for known API issues
 - `cache/` — Test output directory (gitignored)
 
 ## What This Provider Does
@@ -105,4 +107,6 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 - Use `test-thinking/` directory with its `opencode.json` for thinking/reasoning tests
 - Use `test-thinking/debug-proxy.mjs` to inspect request/response bodies (change `baseURL` to `http://localhost:9999/v1/`)
 - Automated Claude thinking test: `bash cache/test-claude-thinking.sh`
+- Automated model compatibility check: `node check-models/check-all.mjs`
+- Single model test: `node check-models/check-all.mjs "GPT 4.1"`
 - If upgrading `@ai-sdk/openai-compatible`, check the bundled version in opencode first: `strings ~/.opencode/bin/opencode | grep 'openai-compatible@'`

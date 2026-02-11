@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [1.3.3] - 2025
 
 ### Added
+- `check-models/` directory with automated model compatibility testing script.
 - `known-bugs/gemini3-tools/` directory with test script and documentation for Gemini 3 tool calling issue.
 
 ## [1.3.2] - 2025

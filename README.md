@@ -141,6 +141,21 @@ opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro" --variant thinking-high
 opencode run "what is 2+2?" -m "nexos-ai/GPT 5" --variant high
 ```
 
+### Automated model check
+
+Run `check-models/check-all.mjs` to test all available models:
+
+```bash
+node check-models/check-all.mjs
+```
+
+Test a single model:
+```bash
+node check-models/check-all.mjs "GPT 4.1"
+```
+
+Results are saved to `check-models/checks.md`.
+
 ## License
 
 MIT
