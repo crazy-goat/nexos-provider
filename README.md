@@ -7,7 +7,7 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 Fixes compatibility issues when using Gemini, Claude, and ChatGPT models through nexos.ai API in opencode:
 
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
-- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled
+- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching
 - **ChatGPT**: no fixes needed — `reasoningEffort` is handled natively by opencode
 - **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
 
@@ -160,6 +160,7 @@ Results are saved to [`check-models/checks.md`](check-models/checks.md) — see 
 
 The `known-bugs/` directory contains documentation and test scripts for known API issues:
 
+- **[token-caching](known-bugs/token-caching/)** — Gemini implicit caching does not do prefix matching (only caches identical requests). Claude and GPT prefix caching works correctly. Gemini explicit caching works but nexos.ai does not expose the `cachedContents` API.
 - **[gemini3-tools](known-bugs/gemini3-tools/)** — Gemini 3 models (Flash Preview, Pro Preview) fail on multi-turn tool calling due to missing `thought_signature` support in nexos.ai API
 - **[thinking](known-bugs/thinking/)** — Test script for thinking/reasoning blocks across models
 

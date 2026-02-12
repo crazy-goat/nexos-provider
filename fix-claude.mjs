@@ -1,3 +1,50 @@
+export function isClaudeModel(model) {
+  return typeof model === "string" && model.toLowerCase().includes("claude");
+}
+
+export function fixClaudeCacheControl(body) {
+  if (!body.messages?.length) return body;
+  const messages = body.messages.map((msg, i) => {
+    if (msg.role !== "system") return msg;
+    if (typeof msg.content === "string") {
+      return {
+        ...msg,
+        content: [
+          {
+            type: "text",
+            text: msg.content,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      };
+    }
+    if (Array.isArray(msg.content) && msg.content.length > 0) {
+      const parts = [...msg.content];
+      const last = { ...parts[parts.length - 1] };
+      if (!last.cache_control) {
+        last.cache_control = { type: "ephemeral" };
+        parts[parts.length - 1] = last;
+        return { ...msg, content: parts };
+      }
+    }
+    return msg;
+  });
+  let result = { ...body, messages };
+  if (result.tools?.length) {
+    const tools = [...result.tools];
+    const lastTool = { ...tools[tools.length - 1] };
+    if (lastTool.function) {
+      lastTool.function = {
+        ...lastTool.function,
+        cache_control: { type: "ephemeral" },
+      };
+      tools[tools.length - 1] = lastTool;
+      result = { ...result, tools };
+    }
+  }
+  return result;
+}
+
 export function fixClaudeRequest(body) {
   if (!body.thinking) return { body, hadThinking: false };
   if (body.thinking.type === "disabled") {

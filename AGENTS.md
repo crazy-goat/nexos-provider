@@ -6,7 +6,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 
 - `index.mjs` — Main provider module, exports `createNexosAI`, imports per-provider fix modules
 - `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
-- `fix-claude.mjs` — Claude-specific fixes (thinking params normalization, `end_turn`→`stop` finish reason)
+- `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason)
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
@@ -31,9 +31,10 @@ Fixes issues when using models through nexos.ai API:
 8. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
 
 ### Claude
-1. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
-2. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
-3. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
+1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests.
+2. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
+3. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
+4. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
 
 ### ChatGPT
 1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
@@ -52,6 +53,7 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
                                     │
                                     ├─ fix-claude.mjs
+                                    │   ├─ fixClaudeCacheControl(): adds cache_control to system messages and last tool
                                     │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal)
                                     │   └─ fixClaudeStream(): end_turn→stop finish reason
                                     │
@@ -76,9 +78,18 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 - The `@ai-sdk/openai-compatible` version MUST match what opencode bundles (currently `1.0.32`). Mismatched versions cause `mode.type` errors in `getArgs`.
 - opencode discovers the provider by finding the first export starting with `create` and calling it with `{ name, ...options }`.
 - The `env` field in the opencode provider config maps environment variable names for API key resolution. For nexos.ai use `["NEXOS_API_KEY"]`.
-- `isGeminiModel()` checks are case-insensitive against the model name string.
+- `isGeminiModel()` and `isClaudeModel()` checks are case-insensitive against the model name string.
 - Stream fixing (`TransformStream` piping) is applied for Gemini models AND any model with `thinking` params.
 - The `hadThinking` flag tracks whether the original request had `thinking` — needed because `fixClaudeRequest` may remove it (when disabled), but body still needs to be re-serialized.
+
+### Prompt Caching Status by Provider
+
+| Provider | Status | Mechanism | Provider Fix Needed |
+|----------|--------|-----------|-------------------|
+| **Claude (Anthropic)** | Works with fix | Requires `cache_control: {"type": "ephemeral"}` markers on system messages and tools | Yes — `fixClaudeCacheControl()` adds markers automatically |
+| **GPT (OpenAI)** | Works automatically | Auto prefix caching (min 1024 tokens), no markers needed | No |
+| **Gemini (Vertex AI)** | Implicit caching (automatic) | Vertex AI has implicit caching enabled by default for Gemini 2.5 (min 2048 tokens, 90% discount). Works automatically but nexos.ai does not report `cached_tokens` in responses — savings are applied on billing side | No fix needed (or possible) |
+| **Codestral (Mistral)** | Not supported | Mistral API does not support prompt caching | Cannot fix in provider |
 
 ## Code Style
 

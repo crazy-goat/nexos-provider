@@ -1,0 +1,1 @@
+I have a Next.js app with a form component that submits data to an API route. The form works but I'm getting hydration errors and the loading state feels janky. Can you help me fix it? Here's my current code that needs review.

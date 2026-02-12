@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.5] - 2025
+
+### Added
+- `known-bugs/token-caching/` — comprehensive token caching tests and documentation for all providers.
+  - Test script (`test-caching.sh`) simulating vibe coding sessions with ~5000 token system prompt.
+  - Supports testing all models or a single model (`./test-caching.sh "Gemini 2.5 Pro"`).
+  - Discovered that Gemini implicit caching does NOT do prefix matching — only caches identical requests.
+  - Gemini explicit caching (via `cachedContents` API) does prefix matching but is not available through nexos.ai.
+  - Claude and GPT prefix caching works correctly through nexos.ai.
+- `known-bugs/thinking/` — documented thinking blocks known bug.
+
 ## [1.3.4] - 2025
 
 ### Fixed
