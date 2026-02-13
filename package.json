@@ -1,6 +1,6 @@
 {
   "name": "@crazy-goat/nexos-provider",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "description": "Custom AI SDK provider for nexos.ai Gemini models in opencode",
   "type": "module",
   "main": "index.mjs",
@@ -32,6 +32,7 @@
     "url": "https://github.com/crazy-goat/nexos-provider/issues"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "1.0.32"
+    "@ai-sdk/openai-compatible": "1.0.32",
+    "ai": "^6.0.85"
   }
 }
