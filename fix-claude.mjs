@@ -76,6 +76,13 @@ export function fixClaudeStream(text) {
           }
         }
       }
+      if (parsed.usage) {
+        const cachedTokens = parsed.usage.prompt_tokens_details?.cached_tokens || 0;
+        if (cachedTokens > 0) {
+          parsed.usage.prompt_tokens = (parsed.usage.prompt_tokens || 0) + cachedTokens;
+          changed = true;
+        }
+      }
       if (changed) {
         return "data: " + JSON.stringify(parsed) + "\n";
       }

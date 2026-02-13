@@ -6,7 +6,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 
 - `index.mjs` — Main provider module, exports `createNexosAI`, imports per-provider fix modules
 - `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
-- `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason)
+- `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens)
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
@@ -35,6 +35,7 @@ Fixes issues when using models through nexos.ai API:
 2. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
 3. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
 4. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
+5. **`prompt_tokens` excludes cached tokens (Opus)** — Claude Opus models via nexos.ai report `prompt_tokens` without including cached tokens (unlike Sonnet which includes them). Additionally, Opus does not return Anthropic-style `cache_creation_input_tokens` / `cache_read_input_tokens` fields — only `prompt_tokens_details.cached_tokens` (OpenAI-style). The provider adds `cached_tokens` to `prompt_tokens` in the SSE stream so token accounting is correct. See `known-bugs/claude-cached-tokens-reporting/` for details.
 
 ### ChatGPT
 1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
@@ -55,7 +56,7 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     ├─ fix-claude.mjs
                                     │   ├─ fixClaudeCacheControl(): adds cache_control to system messages and last tool
                                     │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal)
-                                    │   └─ fixClaudeStream(): end_turn→stop finish reason
+                                    │   └─ fixClaudeStream(): end_turn→stop finish reason, prompt_tokens += cached_tokens
                                     │
                     ├─ fix-chatgpt.mjs
                     │   ├─ fixChatGPTRequest(): strips reasoning_effort:"none"

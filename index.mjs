@@ -64,12 +64,12 @@ function createNexosFetch(baseFetch) {
     const claude = isClaudeModel(requestBody.model);
     if (claude) {
       requestBody = fixClaudeCacheControl(requestBody);
+      needsStreamFix = true;
       bodyChanged = true;
     }
 
     const claudeResult = fixClaudeRequest(requestBody);
     requestBody = claudeResult.body;
-    if (claudeResult.hadThinking) needsStreamFix = true;
 
     const beforeChatGPT = requestBody;
     requestBody = fixChatGPTRequest(requestBody);
