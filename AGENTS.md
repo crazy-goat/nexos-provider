@@ -1,6 +1,6 @@
 # nexos-provider
 
-Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT) in opencode.
+Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT, Codex) in opencode.
 
 ## Project Structure
 
@@ -9,6 +9,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 - `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens)
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
+- `fix-codex.mjs` — Codex-specific fixes (full chat completions → Responses API translation)
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
@@ -40,6 +41,9 @@ Fixes issues when using models through nexos.ai API:
 ### ChatGPT
 1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
 
+### Codex
+1. **Not a chat model** — Codex models (e.g., `GPT 5.3 Codex`) do not support `/v1/chat/completions`. The API returns "This is not a chat model". The provider intercepts Codex requests and redirects them to `/v1/responses` (Responses API), converting the chat completions request format to Responses API format and converting the response/stream back to chat completions format so opencode can process it transparently.
+
 ### Codestral
 1. **`strict: null` in tool definitions** — AI SDK / nexos.ai adds `strict: null` to tool function definitions. Mistral API rejects `null` for this field (expects boolean or absent). The provider sets `strict` to `false` when it's `null` or `undefined` (nexos.ai re-adds `strict: null` if the field is absent, so deletion doesn't work).
 
@@ -61,6 +65,11 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                     ├─ fix-chatgpt.mjs
                     │   ├─ fixChatGPTRequest(): strips reasoning_effort:"none"
                     │   └─ fixChatGPTStream(): passthrough
+                                    │
+                                    ├─ fix-codex.mjs
+                                    │   ├─ isCodexModel(): detects Codex models by name
+                                    │   ├─ convertChatToResponsesRequest(): chat completions → Responses API request
+                                    │   └─ createResponsesStreamConverter(): Responses API SSE → chat completions SSE
                                     │
                                     ├─ fix-codestral.mjs
                                     │   ├─ fixCodestralRequest(): sets strict:false when strict is null/undefined in tool definitions
@@ -111,6 +120,7 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 - Test with all Gemini models: `Gemini 2.5 Pro`, `Gemini 2.5 Flash`, `Gemini 3 Flash Preview`, `Gemini 3 Pro Preview`
 - Test Claude models with thinking variants: `Claude Sonnet 4.5`, `Claude Opus 4.5`
 - Test ChatGPT models with reasoning effort: `GPT 5`, `GPT 5.2`, `GPT 4.1`
+- Test Codex models: `GPT 5.3 Codex`
 - Test Codestral models with tool use: `codestral-2508`
 - Test both simple prompts (`what is 2+2?`) and tool-use prompts (`list files in current directory`)
 - Test command: `opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro"`

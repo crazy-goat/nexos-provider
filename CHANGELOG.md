@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-02-27
+
+### Added
+- **Codex support** — `fix-codex.mjs` adds full support for `GPT 5.3 Codex` and other Codex models that require the Responses API (`/v1/responses`) instead of `/v1/chat/completions`. The provider transparently converts chat completions requests to Responses API format and converts the response (including SSE streaming, tool calls, reasoning, and usage/cache tokens) back to chat completions format.
+
 ## [1.3.5] - 2025
 
 ### Added

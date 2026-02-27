@@ -4,11 +4,12 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 
 ## What it does
 
-Fixes compatibility issues when using Gemini, Claude, and ChatGPT models through nexos.ai API in opencode:
+Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, and Codestral models through nexos.ai API in opencode:
 
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
 - **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching
-- **ChatGPT**: no fixes needed — `reasoningEffort` is handled natively by opencode
+- **ChatGPT**: strips `reasoning_effort: "none"` (unsupported by the API)
+- **Codex**: transparently redirects requests to `/v1/responses` (Responses API) — Codex models don't support `/v1/chat/completions`. Handles streaming, tool calls, reasoning effort, and cache token reporting.
 - **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
 
 ## Setup
@@ -113,7 +114,8 @@ opencode → createNexosAI → fetch wrapper → nexos.ai API
                                │
                                ├─ fix-gemini.mjs: $ref inlining, finish_reason fix
                                ├─ fix-claude.mjs: thinking params, end_turn→stop
-                               ├─ fix-chatgpt.mjs: passthrough (no fixes needed)
+                               ├─ fix-chatgpt.mjs: strips reasoning_effort:"none"
+                               ├─ fix-codex.mjs: chat completions → Responses API
                                └─ fix-codestral.mjs: strict:null→false in tools
 ```
 
@@ -132,6 +134,7 @@ Test tool calling:
 opencode run "list files in current directory" -m "nexos-ai/Gemini 2.5 Pro"
 opencode run "list files in current directory" -m "nexos-ai/Claude Sonnet 4.5"
 opencode run "list files in current directory" -m "nexos-ai/GPT 5"
+opencode run "list files in current directory" -m "nexos-ai/GPT 5.3 Codex"
 ```
 
 Test thinking/reasoning variants:
@@ -139,6 +142,7 @@ Test thinking/reasoning variants:
 opencode run "what is 2+2?" -m "nexos-ai/Claude Sonnet 4.5" --variant thinking-high
 opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro" --variant thinking-high
 opencode run "what is 2+2?" -m "nexos-ai/GPT 5" --variant high
+opencode run "what is 2+2?" -m "nexos-ai/GPT 5.3 Codex" --variant high
 ```
 
 ### Automated model check

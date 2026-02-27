@@ -3,6 +3,7 @@ import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStr
 import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
 import { fixChatGPTRequest, fixChatGPTStream } from "./fix-chatgpt.mjs";
 import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
+import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
 
 function fixStreamChunk(text) {
   text = fixGeminiStream(text);
@@ -41,6 +42,76 @@ function createNexosFetch(baseFetch) {
       requestBody = init?.body ? JSON.parse(init.body) : {};
     } catch {
       requestBody = {};
+    }
+
+    const codex = isCodexModel(requestBody.model);
+    if (codex) {
+      const responsesBody = convertChatToResponsesRequest(requestBody);
+      const responsesUrl = url.replace(/\/chat\/completions\/?$/, "/responses");
+      const responsesInit = { ...init, body: JSON.stringify(responsesBody) };
+      const response = await realFetch(responsesUrl, responsesInit);
+
+      if (responsesBody.stream && response.body) {
+        const converter = createResponsesStreamConverter(
+          "chatcmpl-" + Date.now(),
+          requestBody.model,
+        );
+        const fixedBody = response.body.pipeThrough(converter);
+        return new Response(fixedBody, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      }
+
+      const respJson = await response.json();
+      const hasToolCalls = respJson.output?.some((o) => o.type === "function_call");
+      const message = { role: "assistant", content: null, tool_calls: [] };
+
+      for (const item of respJson.output || []) {
+        if (item.type === "message") {
+          message.content = item.content
+            ?.map((c) => c.text || "")
+            .join("") || null;
+        }
+        if (item.type === "function_call") {
+          message.tool_calls.push({
+            id: item.call_id,
+            type: "function",
+            function: { name: item.name, arguments: item.arguments },
+          });
+        }
+      }
+      if (!message.tool_calls.length) delete message.tool_calls;
+
+      const chatResponse = {
+        id: respJson.id,
+        object: "chat.completion",
+        created: respJson.created_at,
+        model: respJson.model,
+        choices: [{
+          index: 0,
+          message,
+          finish_reason: hasToolCalls ? "tool_calls" : "stop",
+        }],
+        usage: respJson.usage ? {
+          prompt_tokens: respJson.usage.input_tokens || 0,
+          completion_tokens: respJson.usage.output_tokens || 0,
+          total_tokens: respJson.usage.total_tokens || 0,
+          prompt_tokens_details: {
+            cached_tokens: respJson.usage.input_tokens_details?.cached_tokens || 0,
+          },
+          completion_tokens_details: {
+            reasoning_tokens: respJson.usage.output_tokens_details?.reasoning_tokens || 0,
+          },
+        } : undefined,
+      };
+
+      return new Response(JSON.stringify(chatResponse), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     }
 
     const gemini = isGeminiModel(requestBody.model);

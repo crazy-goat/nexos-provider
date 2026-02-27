@@ -1,6 +1,6 @@
 {
   "name": "@crazy-goat/nexos-provider",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Custom AI SDK provider for nexos.ai Gemini models in opencode",
   "type": "module",
   "main": "index.mjs",
@@ -13,6 +13,7 @@
     "fix-claude.mjs",
     "fix-chatgpt.mjs",
     "fix-codestral.mjs",
+    "fix-codex.mjs",
     "README.md"
   ],
   "keywords": [
