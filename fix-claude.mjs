@@ -101,7 +101,8 @@ export function fixClaudeRequest(body) {
     thinking.budget_tokens = thinking.budgetTokens;
     delete thinking.budgetTokens;
   }
-  const result = { ...body, thinking };
+  const { temperature, ...bodyWithoutTemp } = body;
+  const result = { ...bodyWithoutTemp, thinking };
   if (thinking.budget_tokens && result.max_tokens && result.max_tokens <= thinking.budget_tokens) {
     result.max_tokens = thinking.budget_tokens + 4096;
   }

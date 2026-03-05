@@ -2,10 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-03-05
+
+### Fixed
+- **ChatGPT/GPT**: strip `temperature` for non-Codex models (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature).
+- **Bug fix**: `fixChatGPTRequest()` no longer strips temperature for all models - only when explicitly set to `false`.
+
 ## [1.7.0] - 2026-02-27
 
 ### Added
 - **Codex support** — `fix-codex.mjs` adds full support for `GPT 5.3 Codex` and other Codex models that require the Responses API (`/v1/responses`) instead of `/v1/chat/completions`. The provider transparently converts chat completions requests to Responses API format and converts the response (including SSE streaming, tool calls, reasoning, and usage/cache tokens) back to chat completions format.
+
+### Fixed
+- **Claude**: strip `temperature` from request body when thinking is enabled (API rejects `temperature` with thinking).
+- **ChatGPT**: strip `temperature` from request body when set to `false` (invalid value rejected by API).
 
 ## [1.3.5] - 2025
 

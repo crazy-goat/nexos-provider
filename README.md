@@ -7,8 +7,8 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, and Codestral models through nexos.ai API in opencode:
 
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
-- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching
-- **ChatGPT**: strips `reasoning_effort: "none"` (unsupported by the API)
+- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled
+- **ChatGPT/GPT**: strips `reasoning_effort: "none"` (unsupported), strips `temperature: false` (invalid value), **strips temperature for non-Codex models** (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature)
 - **Codex**: transparently redirects requests to `/v1/responses` (Responses API) — Codex models don't support `/v1/chat/completions`. Handles streaming, tool calls, reasoning effort, and cache token reporting.
 - **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
 

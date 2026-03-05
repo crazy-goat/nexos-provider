@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
 import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
-import { fixChatGPTRequest, fixChatGPTStream } from "./fix-chatgpt.mjs";
+import { isChatGPTModel, fixChatGPTRequest, fixChatGPTTemperature, fixChatGPTStream } from "./fix-chatgpt.mjs";
 import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
 import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
 
@@ -146,7 +146,14 @@ function createNexosFetch(baseFetch) {
     requestBody = fixChatGPTRequest(requestBody);
     const chatgptChanged = requestBody !== beforeChatGPT;
 
-    if (gemini || codestral || claude || claudeResult.hadThinking || chatgptChanged) {
+    // Strip temperature for GPT models (nexos.ai only supports default value for chat completions)
+    // Note: Codex models support temperature via Responses API
+    const chatgpt = isChatGPTModel(requestBody.model);
+    if (chatgpt && !codex) {
+      requestBody = fixChatGPTTemperature(requestBody);
+    }
+
+    if (gemini || codestral || claude || claudeResult.hadThinking || chatgptChanged || chatgpt) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 
