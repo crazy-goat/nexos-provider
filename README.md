@@ -100,7 +100,7 @@ Or select the model interactively in opencode with `Ctrl+X M`.
 opencode caches the provider in `~/.cache/opencode/`. To force an update to the latest version:
 
 ```bash
-rm -rf ~/.cache/opencode/node_modules ~/.cache/opencode/bun.lock
+rm -rf ~/.cache/opencode/node_modules/@crazy-goat
 ```
 
 The next time you run opencode, it will download the latest version from npm.

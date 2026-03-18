@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-03-18
+
+### Fixed
+- **Vision support** — all models were missing `modalities` config in `opencode.json`, causing opencode to strip image content before sending to API. Added `modalities: { input: ["text", "image"], output: ["text"] }` to all 11 nexos-ai models.
+- **Gemini unsupported JSON Schema keywords** — Gemini/Vertex AI rejects `exclusiveMinimum`, `exclusiveMaximum`, `patternProperties`, `if`/`then`/`else`, `not`, `$schema`, `$id`, `$anchor`, `$comment`, `contentMediaType`, `contentEncoding` in tool schemas. The provider now strips these during `$ref` resolution, converting `exclusiveMinimum`/`exclusiveMaximum` to `minimum`/`maximum` as best-effort approximation.
+
+### Added
+- **Unit tests** — 67 tests covering all fix modules (`fix-gemini`, `fix-claude`, `fix-chatgpt`, `fix-codestral`, `fix-codex`) using Node.js built-in test runner.
+- **Test images** — `test-cat.jpg`, `test-horse.jpg` for vision testing.
+- **`npm test` script** in `package.json`.
+- **Vision/modalities documentation** in `AGENTS.md`.
+
 ## [1.8.0] - 2026-03-05
 
 ### Fixed

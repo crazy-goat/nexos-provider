@@ -5,7 +5,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 ## Project Structure
 
 - `index.mjs` — Main provider module, exports `createNexosAI`, imports per-provider fix modules
-- `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
+- `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, unsupported JSON Schema keyword stripping, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
 - `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens)
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
@@ -24,12 +24,13 @@ Fixes issues when using models through nexos.ai API:
 ### Gemini
 1. **Missing `data: [DONE]` in SSE streaming** — Gemini responses via nexos don't emit the `[DONE]` signal. The provider appends it via a `TransformStream` flush handler.
 2. **`$ref` in tool schemas** — Gemini (Vertex AI) rejects JSON Schemas with `$ref`/`$defs`. The provider inlines all `$ref` references before sending.
-3. **Wrong `finish_reason` for tool calls** — Gemini returns `stop` instead of `tool_calls` when tool calls are present. The provider fixes this in the SSE stream.
-4. **`finish_reason: "STOP"` (uppercase)** — With thinking enabled, Gemini returns `STOP` instead of `stop`. The provider normalizes it to lowercase.
-5. **`budgetTokens` → `budget_tokens`** — Same as Claude: opencode sends camelCase, API expects snake_case. The provider converts automatically.
-6. **`type: "disabled"` thinking removal** — Same as Claude: strips the entire `thinking` object when `type === "disabled"`.
-7. **Gemini 3 models + tool use** — Gemini 3 Preview models require `thought_signature` for multi-turn tool-use conversations. This is a nexos/Vertex AI limitation, not fixable in the provider. Tool use with Gemini 3 models does NOT work.
-8. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
+3. **Unsupported JSON Schema keywords** — Gemini rejects `exclusiveMinimum`, `exclusiveMaximum`, `patternProperties`, `if`/`then`/`else`, `not`, `$schema`, `$id`, `$anchor`, `$comment`, `contentMediaType`, `contentEncoding` in tool schemas. The provider strips these keywords during `$ref` resolution, converting `exclusiveMinimum`/`exclusiveMaximum` to `minimum`/`maximum` as a best-effort approximation.
+4. **Wrong `finish_reason` for tool calls** — Gemini returns `stop` instead of `tool_calls` when tool calls are present. The provider fixes this in the SSE stream.
+5. **`finish_reason: "STOP"` (uppercase)** — With thinking enabled, Gemini returns `STOP` instead of `stop`. The provider normalizes it to lowercase.
+6. **`budgetTokens` → `budget_tokens`** — Same as Claude: opencode sends camelCase, API expects snake_case. The provider converts automatically.
+7. **`type: "disabled"` thinking removal** — Same as Claude: strips the entire `thinking` object when `type === "disabled"`.
+8. **Gemini 3 models + tool use** — Gemini 3 Preview models require `thought_signature` for multi-turn tool-use conversations. This is a nexos/Vertex AI limitation, not fixable in the provider. Tool use with Gemini 3 models does NOT work.
+9. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
 
 ### Claude
 1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests.
@@ -53,7 +54,7 @@ Fixes issues when using models through nexos.ai API:
 opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │
                                     ├─ fix-gemini.mjs
-                                    │   ├─ fixGeminiRequest(): inlines $ref in tool schemas
+                                    │   ├─ fixGeminiRequest(): inlines $ref, strips unsupported JSON Schema keywords in tool schemas
                                     │   ├─ fixGeminiThinkingRequest(): thinking params (camelCase→snake_case, disabled removal)
                                     │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
                                     │
@@ -100,6 +101,25 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 | **GPT (OpenAI)** | Works automatically | Auto prefix caching (min 1024 tokens), no markers needed | No |
 | **Gemini (Vertex AI)** | Implicit caching (automatic) | Vertex AI has implicit caching enabled by default for Gemini 2.5 (min 2048 tokens, 90% discount). Works automatically but nexos.ai does not report `cached_tokens` in responses — savings are applied on billing side | No fix needed (or possible) |
 | **Codestral (Mistral)** | Not supported | Mistral API does not support prompt caching | Cannot fix in provider |
+
+### Vision / Image Input
+
+opencode uses the `modalities` field in model config to determine if a model supports image input. Without `modalities.input` containing `"image"`, opencode will NOT send images to the model — even if the API supports it. This is an opencode behavior, not a provider issue.
+
+**Required config for vision-capable models:**
+```json
+"modalities": {
+  "input": ["text", "image"],
+  "output": ["text"]
+}
+```
+
+All vision-capable models in `opencode.json` MUST have this field. Models confirmed to support vision via nexos.ai API:
+- Kimi K2.5
+- Claude Opus 4.5, 4.6
+- Claude Sonnet 4.5, 4.6
+- Gemini 2.5 Pro, 2.5 Flash
+- GPT 5, 5.2, 5.3 Instant
 
 ## Code Style
 

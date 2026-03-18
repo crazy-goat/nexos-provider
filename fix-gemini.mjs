@@ -1,3 +1,11 @@
+const UNSUPPORTED_SCHEMA_KEYS = new Set([
+  "$defs", "definitions", "$ref", "ref", "$schema",
+  "exclusiveMinimum", "exclusiveMaximum",
+  "patternProperties", "if", "then", "else", "not",
+  "contentMediaType", "contentEncoding",
+  "$id", "$anchor", "$comment",
+]);
+
 function resolveRefs(schema, defs) {
   if (!schema || typeof schema !== "object") return schema;
   if (Array.isArray(schema)) return schema.map((s) => resolveRefs(s, defs));
@@ -17,9 +25,14 @@ function resolveRefs(schema, defs) {
 
   const result = {};
   for (const [k, v] of Object.entries(schema)) {
-    if (k === "$defs" || k === "definitions" || k === "$ref" || k === "ref")
-      continue;
+    if (UNSUPPORTED_SCHEMA_KEYS.has(k)) continue;
     result[k] = resolveRefs(v, defs);
+  }
+  if (schema.exclusiveMinimum !== undefined && result.minimum === undefined) {
+    result.minimum = schema.exclusiveMinimum;
+  }
+  if (schema.exclusiveMaximum !== undefined && result.maximum === undefined) {
+    result.maximum = schema.exclusiveMaximum;
   }
   return result;
 }
