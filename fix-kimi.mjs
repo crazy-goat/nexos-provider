@@ -57,14 +57,11 @@ export async function bufferKimiStream(response, fixStreamChunk) {
     suffix += "data: [DONE]\n\n";
   }
 
+  const allData = chunks.join("") + suffix;
+
   const stream = new ReadableStream({
     start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-      }
-      if (suffix) {
-        controller.enqueue(encoder.encode(suffix));
-      }
+      controller.enqueue(encoder.encode(allData));
       controller.close();
     },
   });
