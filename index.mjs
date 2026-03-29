@@ -1,15 +1,17 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
-import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
+import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream, fixClaudeMessages } from "./fix-claude.mjs";
 import { isChatGPTModel, fixChatGPTRequest, fixChatGPTTemperature, fixChatGPTStream } from "./fix-chatgpt.mjs";
 import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
 import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
+import { isKimiModel, fixKimiStream, bufferKimiStream } from "./fix-kimi.mjs";
 
 function fixStreamChunk(text) {
   text = fixGeminiStream(text);
   text = fixClaudeStream(text);
   text = fixChatGPTStream(text);
   text = fixCodestralStream(text);
+  text = fixKimiStream(text);
   return text;
 }
 
@@ -116,6 +118,7 @@ function createNexosFetch(baseFetch) {
 
     const gemini = isGeminiModel(requestBody.model);
     const codestral = isCodestralModel(requestBody.model);
+    const kimi = isKimiModel(requestBody.model);
     let needsStreamFix = gemini;
     let bodyChanged = false;
 
@@ -135,6 +138,7 @@ function createNexosFetch(baseFetch) {
     const claude = isClaudeModel(requestBody.model);
     if (claude) {
       requestBody = fixClaudeCacheControl(requestBody);
+      requestBody = fixClaudeMessages(requestBody);
       needsStreamFix = true;
       bodyChanged = true;
     }
@@ -146,18 +150,20 @@ function createNexosFetch(baseFetch) {
     requestBody = fixChatGPTRequest(requestBody);
     const chatgptChanged = requestBody !== beforeChatGPT;
 
-    // Strip temperature for GPT models (nexos.ai only supports default value for chat completions)
-    // Note: Codex models support temperature via Responses API
     const chatgpt = isChatGPTModel(requestBody.model);
     if (chatgpt && !codex) {
       requestBody = fixChatGPTTemperature(requestBody);
     }
 
-    if (gemini || codestral || claude || claudeResult.hadThinking || chatgptChanged || chatgpt) {
+    if (gemini || codestral || kimi || claude || claudeResult.hadThinking || chatgptChanged || chatgpt) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 
     const response = await realFetch(url, init);
+
+    if (kimi && requestBody.stream) {
+      return await bufferKimiStream(response, fixStreamChunk);
+    }
 
     if (needsStreamFix && requestBody.stream) {
       const fixedBody = response.body.pipeThrough(appendDoneToStream());

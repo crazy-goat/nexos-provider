@@ -1,6 +1,6 @@
 # nexos-provider
 
-Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT, Codex) in opencode.
+Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT, Codex, Kimi) in opencode.
 
 ## Project Structure
 
@@ -10,6 +10,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
 - `fix-codex.mjs` — Codex-specific fixes (full chat completions → Responses API translation)
+- `fix-kimi.mjs` — Kimi-specific fixes (stream buffering for missing `[DONE]` and usage, model detection)
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
@@ -32,12 +33,18 @@ Fixes issues when using models through nexos.ai API:
 8. **Gemini 3 models + tool use** — Gemini 3 Preview models require `thought_signature` for multi-turn tool-use conversations. This is a nexos/Vertex AI limitation, not fixable in the provider. Tool use with Gemini 3 models does NOT work.
 9. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
 
+### Kimi
+1. **Missing `data: [DONE]` in SSE streaming** — Kimi API does not emit the `[DONE]` signal at the end of streaming responses. Without it, AI SDK cannot determine when the stream has ended.
+2. **Missing `usage` in streaming** — Kimi API does not include usage data (prompt_tokens, completion_tokens) in streaming responses. AI SDK requires this data. The provider synthesizes a usage chunk with zero values.
+3. **Stream buffering** — To avoid issues with `TransformStream.flush()` being called in unexpected ways by AI SDK internals, the provider buffers the entire Kimi stream, applies fixes, then re-emits it as a single-shot `ReadableStream`. This prevents the response repetition bug that occurs with `TransformStream`-based approaches.
+
 ### Claude
 1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests.
 2. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
 3. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
 4. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
 5. **`prompt_tokens` excludes cached tokens (Opus)** — Claude Opus models via nexos.ai report `prompt_tokens` without including cached tokens (unlike Sonnet which includes them). Additionally, Opus does not return Anthropic-style `cache_creation_input_tokens` / `cache_read_input_tokens` fields — only `prompt_tokens_details.cached_tokens` (OpenAI-style). The provider adds `cached_tokens` to `prompt_tokens` in the SSE stream so token accounting is correct. See `known-bugs/claude-cached-tokens-reporting/` for details.
+6. **Assistant message prefill** — Claude via nexos.ai rejects requests where the last message has `role: "assistant"` with error "This model does not support assistant message prefill. The conversation must end with a user message." The provider appends a minimal user message (`"."`) when the last message is from the assistant.
 
 ### ChatGPT
 1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
@@ -60,6 +67,7 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │
                                     ├─ fix-claude.mjs
                                     │   ├─ fixClaudeCacheControl(): adds cache_control to system messages and last tool
+                                    │   ├─ fixClaudeMessages(): appends user message when last message is assistant
                                     │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal)
                                     │   └─ fixClaudeStream(): end_turn→stop finish reason, prompt_tokens += cached_tokens
                                     │
@@ -76,6 +84,11 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │   ├─ fixCodestralRequest(): sets strict:false when strict is null/undefined in tool definitions
                                     │   └─ fixCodestralStream(): passthrough
                                     │
+                                    ├─ fix-kimi.mjs
+                                    │   ├─ isKimiModel(): detects Kimi models by name
+                                    │   ├─ bufferKimiStream(): buffers entire stream, adds usage+[DONE], re-emits
+                                    │   └─ fixKimiStream(): passthrough (stream fixes applied via bufferKimiStream)
+                                    │
                                     └─ appendDoneToStream(): adds data: [DONE]\n\n via TransformStream
 ```
 
@@ -89,8 +102,9 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 - The `@ai-sdk/openai-compatible` version MUST match what opencode bundles (currently `1.0.32`). Mismatched versions cause `mode.type` errors in `getArgs`.
 - opencode discovers the provider by finding the first export starting with `create` and calling it with `{ name, ...options }`.
 - The `env` field in the opencode provider config maps environment variable names for API key resolution. For nexos.ai use `["NEXOS_API_KEY"]`.
-- `isGeminiModel()` and `isClaudeModel()` checks are case-insensitive against the model name string.
+- `isGeminiModel()`, `isClaudeModel()`, and `isKimiModel()` checks are case-insensitive against the model name string.
 - Stream fixing (`TransformStream` piping) is applied for Gemini models AND any model with `thinking` params.
+- Kimi models use a different stream fix strategy: full stream buffering via `bufferKimiStream()` instead of `TransformStream`, to avoid `flush()` being called multiple times by AI SDK internals.
 - The `hadThinking` flag tracks whether the original request had `thinking` — needed because `fixClaudeRequest` may remove it (when disabled), but body still needs to be re-serialized.
 
 ### Prompt Caching Status by Provider

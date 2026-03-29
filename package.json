@@ -17,6 +17,7 @@
     "fix-chatgpt.mjs",
     "fix-codestral.mjs",
     "fix-codex.mjs",
+    "fix-kimi.mjs",
     "README.md"
   ],
   "keywords": [

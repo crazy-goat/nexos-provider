@@ -136,3 +136,17 @@ export function fixClaudeStream(text) {
     return match;
   });
 }
+
+export function fixClaudeMessages(body) {
+  if (!body.messages?.length) return body;
+  const lastMsg = body.messages[body.messages.length - 1];
+  // Claude requires conversation to end with user message
+  // Add empty user message if last is assistant
+  if (lastMsg?.role === "assistant") {
+    return {
+      ...body,
+      messages: [...body.messages, { role: "user", content: "." }]
+    };
+  }
+  return body;
+}
