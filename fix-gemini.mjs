@@ -63,9 +63,38 @@ export function isGeminiModel(model) {
   return typeof model === "string" && model.toLowerCase().includes("gemini");
 }
 
+function isGemini3(model) {
+  if (typeof model !== "string") return false;
+  const m = model.toLowerCase();
+  return m.includes("gemini") && (m.includes("3 ") || m.includes("3."));
+}
+
+function rewriteToolCallHistory(body) {
+  if (!body.messages?.length) return body;
+  const messages = [];
+  for (const msg of body.messages) {
+    if (msg.role === "assistant" && msg.tool_calls?.length) {
+      const calls = msg.tool_calls.map((tc) =>
+        `[Called tool: ${tc.function.name}(${tc.function.arguments})]`
+      ).join("\n");
+      const text = (msg.content || "") + calls;
+      messages.push({ role: "assistant", content: text });
+    } else if (msg.role === "tool") {
+      const callId = msg.tool_call_id || "";
+      messages.push({ role: "user", content: `[Tool result${callId ? " for " + callId : ""}]:\n${typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)}` });
+    } else {
+      messages.push(msg);
+    }
+  }
+  return { ...body, messages };
+}
+
 export function fixGeminiRequest(body) {
   if (body.tools) {
     body = fixToolSchemas(body);
+  }
+  if (isGemini3(body.model)) {
+    body = rewriteToolCallHistory(body);
   }
   return body;
 }

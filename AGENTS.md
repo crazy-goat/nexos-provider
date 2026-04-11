@@ -30,8 +30,9 @@ Fixes issues when using models through nexos.ai API:
 5. **`finish_reason: "STOP"` (uppercase)** — With thinking enabled, Gemini returns `STOP` instead of `stop`. The provider normalizes it to lowercase.
 6. **`budgetTokens` → `budget_tokens`** — Same as Claude: opencode sends camelCase, API expects snake_case. The provider converts automatically.
 7. **`type: "disabled"` thinking removal** — Same as Claude: strips the entire `thinking` object when `type === "disabled"`.
-8. **Gemini 3 models + tool use** — Gemini 3 Preview models require `thought_signature` for multi-turn tool-use conversations. This is a nexos/Vertex AI limitation, not fixable in the provider. Tool use with Gemini 3 models does NOT work.
+8. **Gemini 3/3.1 models + tool use** — Gemini 3/3.1 models require `thought_signature` for multi-turn tool-use conversations. nexos.ai strips this field. The provider works around it by rewriting tool call history as plain text messages (`rewriteToolCallHistory`) — assistant tool_calls become text descriptions, tool results become user messages. First tool call works natively; subsequent turns use the rewritten format.
 9. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
+10. **Gemini caching** — nexos.ai does not report cached tokens for Gemini models (implicit caching on vertex-ai). `cache_control: {"type": "ephemeral"}` markers have no effect — vertex-ai uses implicit caching only. Savings may apply on billing side but are not visible in API responses.
 
 ### Kimi / GLM (fireworks-ai)
 1. **Missing `data: [DONE]` in SSE streaming** — fireworks-ai models (Kimi, GLM) do not emit the `[DONE]` signal at the end of streaming responses. Without it, AI SDK cannot determine when the stream has ended.
@@ -61,7 +62,7 @@ Fixes issues when using models through nexos.ai API:
 opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │
                                     ├─ fix-gemini.mjs
-                                    │   ├─ fixGeminiRequest(): inlines $ref, strips unsupported JSON Schema keywords in tool schemas
+                                    │   ├─ fixGeminiRequest(): inlines $ref, strips unsupported JSON Schema keywords, rewrites Gemini 3/3.1 tool call history
                                     │   ├─ fixGeminiThinkingRequest(): thinking params (camelCase→snake_case, disabled removal)
                                     │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
                                     │

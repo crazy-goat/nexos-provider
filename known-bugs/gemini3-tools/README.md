@@ -99,7 +99,15 @@ Nexos strips all non-standard fields from `tool_calls` entries (only `id`, `type
 
 In the native Vertex AI format, `thought_signature` is a sibling of `functionCall` at `parts[]` level. Nexos converts OpenAI format to native format but does not map any client field to `parts[].thought_signature`.
 
-## Expected fix
+## Provider workaround
+
+The provider now rewrites tool call history for Gemini 3/3.1 models (`rewriteToolCallHistory` in `fix-gemini.mjs`). Instead of sending the standard `assistant(tool_calls) → tool(result)` format, it converts:
+- `assistant` messages with `tool_calls` → `assistant` with text description of the calls
+- `tool` result messages → `user` messages with the result text
+
+This avoids the `thought_signature` requirement entirely. First tool call works natively (no history to rewrite). Multi-turn tool use works via the rewritten format.
+
+## Upstream fix (still needed)
 
 Nexos API should propagate `extra_content.google.thought_signature` on `tool_calls` entries to Vertex AI, as documented in:
 https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
