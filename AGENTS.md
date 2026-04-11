@@ -1,6 +1,6 @@
 # nexos-provider
 
-Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT, Codex, Kimi) in opencode.
+Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT, Codex, Kimi, GLM) in opencode.
 
 ## Project Structure
 
@@ -10,7 +10,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
 - `fix-codex.mjs` — Codex-specific fixes (full chat completions → Responses API translation)
-- `fix-kimi.mjs` — Kimi-specific fixes (stream buffering for missing `[DONE]` and usage, model detection)
+- `fix-kimi.mjs` — Kimi/GLM (fireworks-ai) fixes (stream TransformStream for missing `[DONE]` and usage, model detection)
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@2.0.37`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
@@ -33,10 +33,10 @@ Fixes issues when using models through nexos.ai API:
 8. **Gemini 3 models + tool use** — Gemini 3 Preview models require `thought_signature` for multi-turn tool-use conversations. This is a nexos/Vertex AI limitation, not fixable in the provider. Tool use with Gemini 3 models does NOT work.
 9. **Gemini 2.5 Flash budget limit** — Flash model has a lower thinking budget limit (24576) than Pro (32000+). Configure `budgetTokens` accordingly in `opencode.json`.
 
-### Kimi
-1. **Missing `data: [DONE]` in SSE streaming** — Kimi API does not emit the `[DONE]` signal at the end of streaming responses. Without it, AI SDK cannot determine when the stream has ended.
-2. **Missing `usage` in streaming** — Kimi API does not include usage data (prompt_tokens, completion_tokens) in streaming responses. AI SDK requires this data. The provider synthesizes a usage chunk with zero values.
-3. **Stream buffering** — To avoid issues with `TransformStream.flush()` being called in unexpected ways by AI SDK internals, the provider buffers the entire Kimi stream, applies fixes, then re-emits it as a single-shot `ReadableStream`. This prevents the response repetition bug that occurs with `TransformStream`-based approaches.
+### Kimi / GLM (fireworks-ai)
+1. **Missing `data: [DONE]` in SSE streaming** — fireworks-ai models (Kimi, GLM) do not emit the `[DONE]` signal at the end of streaming responses. Without it, AI SDK cannot determine when the stream has ended.
+2. **Missing `usage` in streaming** — fireworks-ai does not include usage data (prompt_tokens, completion_tokens) in streaming responses, even though non-streaming responses have it. AI SDK requires this data. The provider synthesizes a usage chunk with zero values.
+3. **Stream fix via TransformStream** — The provider uses a `TransformStream` with `\n\n` buffering (same pattern as `appendDoneToStream`) to add missing `[DONE]` and usage chunks in the `flush` handler while streaming tokens to the user in real-time.
 
 ### Claude
 1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests.
@@ -84,9 +84,8 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │   └─ fixCodestralStream(): passthrough
                                     │
                                     ├─ fix-kimi.mjs
-                                    │   ├─ isKimiModel(): detects Kimi models by name
-                                    │   ├─ bufferKimiStream(): buffers entire stream, adds usage+[DONE], re-emits
-                                    │   └─ fixKimiStream(): passthrough (stream fixes applied via bufferKimiStream)
+                                    │   ├─ isKimiModel(): detects Kimi and GLM (fireworks-ai) models by name
+                                    │   └─ createKimiStreamTransform(): TransformStream with \n\n buffering, adds usage+[DONE]
                                     │
                                     └─ appendDoneToStream(): buffers SSE events by \n\n, applies fixStreamChunk, adds [DONE] if missing
 ```
@@ -101,9 +100,9 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 - The `@ai-sdk/openai-compatible` version MUST match what opencode bundles (currently `2.0.37`). Mismatched versions cause `mode.type` errors in `getArgs`.
 - opencode discovers the provider by finding the first export starting with `create` and calling it with `{ name, ...options }`.
 - The `env` field in the opencode provider config maps environment variable names for API key resolution. For nexos.ai use `["NEXOS_API_KEY"]`.
-- `isGeminiModel()`, `isClaudeModel()`, and `isKimiModel()` checks are case-insensitive against the model name string.
+- `isGeminiModel()`, `isClaudeModel()`, and `isKimiModel()` checks are case-insensitive against the model name string. `isKimiModel()` also matches GLM models (both run on fireworks-ai backend).
 - Stream fixing (`TransformStream` piping) is applied for Gemini models and all Claude models. The `appendDoneToStream()` transform buffers SSE events by `\n\n` boundaries before applying `fixStreamChunk()`, ensuring regex-based fixes work even when TCP chunks split SSE events.
-- Kimi models use a different stream fix strategy: full stream buffering via `bufferKimiStream()` instead of `TransformStream`, to avoid `flush()` being called multiple times by AI SDK internals.
+- Kimi/GLM models use `createKimiStreamTransform()` — a `TransformStream` with `\n\n` buffering that adds missing `[DONE]` and usage chunks. Same buffering pattern as `appendDoneToStream()`.
 - `fixClaudeRequest` only runs inside the `if (claude)` block — it strips temperature (required for Claude thinking) and would incorrectly strip it from Gemini if run globally. Gemini has its own thinking handler (`fixGeminiThinkingRequest`) that preserves temperature.
 - `resolveRefs` in fix-gemini.mjs has circular reference protection via a `seen` Set — circular `$ref` returns `{}` instead of infinite recursion.
 

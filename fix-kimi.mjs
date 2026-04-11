@@ -1,5 +1,7 @@
 export function isKimiModel(model) {
-  return typeof model === "string" && model.toLowerCase().includes("kimi");
+  if (typeof model !== "string") return false;
+  const m = model.toLowerCase();
+  return m.includes("kimi") || m.includes("glm");
 }
 
 export function createKimiStreamTransform(fixStreamChunk) {
