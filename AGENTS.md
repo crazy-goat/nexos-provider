@@ -6,12 +6,12 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 
 - `index.mjs` — Main provider module, exports `createNexosAI`, imports per-provider fix modules
 - `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, unsupported JSON Schema keyword stripping, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
-- `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens)
+- `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens). Note: `fixClaudeRequest` only runs for Claude models (not globally) to avoid stripping temperature from non-Claude models with thinking.
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
 - `fix-codex.mjs` — Codex-specific fixes (full chat completions → Responses API translation)
 - `fix-kimi.mjs` — Kimi-specific fixes (stream buffering for missing `[DONE]` and usage, model detection)
-- `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@1.0.32`)
+- `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@2.0.37`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
 - `check-models/` — Automated model compatibility testing script
@@ -44,7 +44,7 @@ Fixes issues when using models through nexos.ai API:
 3. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
 4. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
 5. **`prompt_tokens` excludes cached tokens (Opus)** — Claude Opus models via nexos.ai report `prompt_tokens` without including cached tokens (unlike Sonnet which includes them). Additionally, Opus does not return Anthropic-style `cache_creation_input_tokens` / `cache_read_input_tokens` fields — only `prompt_tokens_details.cached_tokens` (OpenAI-style). The provider adds `cached_tokens` to `prompt_tokens` in the SSE stream so token accounting is correct. See `known-bugs/claude-cached-tokens-reporting/` for details.
-6. **Assistant message prefill** — Claude via nexos.ai rejects requests where the last message has `role: "assistant"` with error "This model does not support assistant message prefill. The conversation must end with a user message." The provider appends a minimal user message (`"."`) when the last message is from the assistant.
+6. **SSE stream chunk buffering** — SSE events from nexos.ai may arrive split across TCP chunks. Without buffering, the regex-based stream fixes (`end_turn`→`stop`, `prompt_tokens` adjustment) fail on partial JSON, causing opencode to hang waiting for a valid `stop` finish reason. The provider now buffers SSE events by `\n\n` boundaries before applying fixes.
 
 ### ChatGPT
 1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
@@ -67,8 +67,7 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │
                                     ├─ fix-claude.mjs
                                     │   ├─ fixClaudeCacheControl(): adds cache_control to system messages and last tool
-                                    │   ├─ fixClaudeMessages(): appends user message when last message is assistant
-                                    │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal)
+                                    │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal, temperature strip)
                                     │   └─ fixClaudeStream(): end_turn→stop finish reason, prompt_tokens += cached_tokens
                                     │
                     ├─ fix-chatgpt.mjs
@@ -89,7 +88,7 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │   ├─ bufferKimiStream(): buffers entire stream, adds usage+[DONE], re-emits
                                     │   └─ fixKimiStream(): passthrough (stream fixes applied via bufferKimiStream)
                                     │
-                                    └─ appendDoneToStream(): adds data: [DONE]\n\n via TransformStream
+                                    └─ appendDoneToStream(): buffers SSE events by \n\n, applies fixStreamChunk, adds [DONE] if missing
 ```
 
 The provider is loaded by opencode via `file://` path in `opencode.json`:
@@ -99,13 +98,14 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 
 ## Key Technical Details
 
-- The `@ai-sdk/openai-compatible` version MUST match what opencode bundles (currently `1.0.32`). Mismatched versions cause `mode.type` errors in `getArgs`.
+- The `@ai-sdk/openai-compatible` version MUST match what opencode bundles (currently `2.0.37`). Mismatched versions cause `mode.type` errors in `getArgs`.
 - opencode discovers the provider by finding the first export starting with `create` and calling it with `{ name, ...options }`.
 - The `env` field in the opencode provider config maps environment variable names for API key resolution. For nexos.ai use `["NEXOS_API_KEY"]`.
 - `isGeminiModel()`, `isClaudeModel()`, and `isKimiModel()` checks are case-insensitive against the model name string.
-- Stream fixing (`TransformStream` piping) is applied for Gemini models AND any model with `thinking` params.
+- Stream fixing (`TransformStream` piping) is applied for Gemini models and all Claude models. The `appendDoneToStream()` transform buffers SSE events by `\n\n` boundaries before applying `fixStreamChunk()`, ensuring regex-based fixes work even when TCP chunks split SSE events.
 - Kimi models use a different stream fix strategy: full stream buffering via `bufferKimiStream()` instead of `TransformStream`, to avoid `flush()` being called multiple times by AI SDK internals.
-- The `hadThinking` flag tracks whether the original request had `thinking` — needed because `fixClaudeRequest` may remove it (when disabled), but body still needs to be re-serialized.
+- `fixClaudeRequest` only runs inside the `if (claude)` block — it strips temperature (required for Claude thinking) and would incorrectly strip it from Gemini if run globally. Gemini has its own thinking handler (`fixGeminiThinkingRequest`) that preserves temperature.
+- `resolveRefs` in fix-gemini.mjs has circular reference protection via a `seen` Set — circular `$ref` returns `{}` instead of infinite recursion.
 
 ### Prompt Caching Status by Provider
 

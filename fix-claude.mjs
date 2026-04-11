@@ -37,13 +37,14 @@ export function fixClaudeCacheControl(body) {
     }
     return msg;
   });
-  let lastNonAssistantIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
+  const nonAssistantIndices = [];
+  for (let i = 0; i < messages.length; i++) {
     if (messages[i].role !== "system" && messages[i].role !== "assistant") {
-      lastNonAssistantIndex = i;
-      break;
+      nonAssistantIndices.push(i);
     }
   }
+  const lastNonAssistantIndex = nonAssistantIndices.length > 0 ? nonAssistantIndices[nonAssistantIndices.length - 1] : -1;
+  const prevNonAssistantIndex = nonAssistantIndices.length > 1 ? nonAssistantIndices[nonAssistantIndices.length - 2] : -1;
   if (lastNonAssistantIndex >= 0) {
     messages = [...messages];
     const msg = messages[lastNonAssistantIndex];
@@ -71,6 +72,30 @@ export function fixClaudeCacheControl(body) {
         last.cache_control = { type: "ephemeral" };
         parts[parts.length - 1] = last;
         messages[lastNonAssistantIndex] = { ...msg, content: parts };
+      }
+    }
+  }
+  if (prevNonAssistantIndex >= 0) {
+    messages = [...messages];
+    const msg = messages[prevNonAssistantIndex];
+    if (typeof msg.content === "string" && msg.content.length > 0) {
+      messages[prevNonAssistantIndex] = {
+        ...msg,
+        content: [
+          {
+            type: "text",
+            text: msg.content,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      };
+    } else if (Array.isArray(msg.content) && msg.content.length > 0) {
+      const parts = [...msg.content];
+      const last = { ...parts[parts.length - 1] };
+      if (!last.cache_control) {
+        last.cache_control = { type: "ephemeral" };
+        parts[parts.length - 1] = last;
+        messages[prevNonAssistantIndex] = { ...msg, content: parts };
       }
     }
   }
@@ -137,16 +162,3 @@ export function fixClaudeStream(text) {
   });
 }
 
-export function fixClaudeMessages(body) {
-  if (!body.messages?.length) return body;
-  const lastMsg = body.messages[body.messages.length - 1];
-  // Claude requires conversation to end with user message
-  // Add empty user message if last is assistant
-  if (lastMsg?.role === "assistant") {
-    return {
-      ...body,
-      messages: [...body.messages, { role: "user", content: "." }]
-    };
-  }
-  return body;
-}

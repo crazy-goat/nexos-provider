@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream, fixClaudeMessages } from "./fix-claude.mjs";
+import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
 
 describe("isClaudeModel", () => {
   it("detects Claude models case-insensitively", () => {
@@ -179,65 +179,3 @@ describe("fixClaudeStream", () => {
   });
 });
 
-describe("fixClaudeMessages", () => {
-  it("adds user message when last message is assistant", () => {
-    const body = {
-      messages: [
-        { role: "user", content: "Hello" },
-        { role: "assistant", content: "Hi there" },
-      ],
-    };
-
-    const result = fixClaudeMessages(body);
-    assert.equal(result.messages.length, 3);
-    assert.equal(result.messages[2].role, "user");
-    assert.equal(result.messages[2].content, ".");
-  });
-
-  it("does not modify when last message is user", () => {
-    const body = {
-      messages: [
-        { role: "user", content: "Hello" },
-      ],
-    };
-
-    const result = fixClaudeMessages(body);
-    assert.equal(result.messages.length, 1);
-    assert.deepEqual(result, body);
-  });
-
-  it("does not modify when last message is system", () => {
-    const body = {
-      messages: [
-        { role: "system", content: "You are helpful" },
-      ],
-    };
-
-    const result = fixClaudeMessages(body);
-    assert.equal(result.messages.length, 1);
-  });
-
-  it("passes through body without messages", () => {
-    const body = { model: "Claude Sonnet 4.5" };
-    const result = fixClaudeMessages(body);
-    assert.deepEqual(result, body);
-  });
-
-  it("passes through body with empty messages", () => {
-    const body = { messages: [] };
-    const result = fixClaudeMessages(body);
-    assert.deepEqual(result, body);
-  });
-
-  it("preserves original messages array immutably", () => {
-    const original = [
-      { role: "user", content: "Hello" },
-      { role: "assistant", content: "Hi" },
-    ];
-    const body = { messages: original };
-
-    const result = fixClaudeMessages(body);
-    assert.equal(original.length, 2, "original should not be modified");
-    assert.equal(result.messages.length, 3);
-  });
-});

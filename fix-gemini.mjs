@@ -6,17 +6,20 @@ const UNSUPPORTED_SCHEMA_KEYS = new Set([
   "$id", "$anchor", "$comment",
 ]);
 
-function resolveRefs(schema, defs) {
+function resolveRefs(schema, defs, seen) {
   if (!schema || typeof schema !== "object") return schema;
-  if (Array.isArray(schema)) return schema.map((s) => resolveRefs(s, defs));
+  if (Array.isArray(schema)) return schema.map((s) => resolveRefs(s, defs, seen));
 
   if (schema.$ref || schema.ref) {
     const refName = (schema.$ref || schema.ref)
       .replace(/^#\/\$defs\//, "")
       .replace(/^#\/definitions\//, "");
+    const resolving = seen || new Set();
+    if (resolving.has(refName)) return {};
+    resolving.add(refName);
     const resolved = defs?.[refName];
     if (resolved) {
-      const merged = { ...resolveRefs(resolved, defs) };
+      const merged = { ...resolveRefs(resolved, defs, resolving) };
       if (schema.description) merged.description = schema.description;
       if (schema.default !== undefined) merged.default = schema.default;
       return merged;
@@ -26,7 +29,7 @@ function resolveRefs(schema, defs) {
   const result = {};
   for (const [k, v] of Object.entries(schema)) {
     if (UNSUPPORTED_SCHEMA_KEYS.has(k)) continue;
-    result[k] = resolveRefs(v, defs);
+    result[k] = resolveRefs(v, defs, seen);
   }
   if (schema.exclusiveMinimum !== undefined && result.minimum === undefined) {
     result.minimum = schema.exclusiveMinimum;

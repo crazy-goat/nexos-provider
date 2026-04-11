@@ -1,6 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
-import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream, fixClaudeMessages } from "./fix-claude.mjs";
+import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
 import { isChatGPTModel, fixChatGPTRequest, fixChatGPTTemperature, fixChatGPTStream } from "./fix-chatgpt.mjs";
 import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
 import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
@@ -18,16 +18,25 @@ function fixStreamChunk(text) {
 function appendDoneToStream() {
   const encoder = new TextEncoder();
   let sawDone = false;
+  let buffer = "";
 
   return new TransformStream({
     transform(chunk, controller) {
-      let text =
-        typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
-      if (text.includes("[DONE]")) sawDone = true;
-      text = fixStreamChunk(text);
-      controller.enqueue(encoder.encode(text));
+      buffer += typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        if (part.includes("[DONE]")) sawDone = true;
+        const fixed = fixStreamChunk(part + "\n");
+        controller.enqueue(encoder.encode(fixed + "\n"));
+      }
     },
     flush(controller) {
+      if (buffer.trim()) {
+        if (buffer.includes("[DONE]")) sawDone = true;
+        const fixed = fixStreamChunk(buffer + "\n");
+        controller.enqueue(encoder.encode(fixed + "\n"));
+      }
       if (!sawDone) {
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       }
@@ -119,6 +128,7 @@ function createNexosFetch(baseFetch) {
     const gemini = isGeminiModel(requestBody.model);
     const codestral = isCodestralModel(requestBody.model);
     const kimi = isKimiModel(requestBody.model);
+    const claude = isClaudeModel(requestBody.model);
     let needsStreamFix = gemini;
     let bodyChanged = false;
 
@@ -135,16 +145,15 @@ function createNexosFetch(baseFetch) {
       bodyChanged = true;
     }
 
-    const claude = isClaudeModel(requestBody.model);
+    let hadThinking = false;
     if (claude) {
       requestBody = fixClaudeCacheControl(requestBody);
-      requestBody = fixClaudeMessages(requestBody);
+      const claudeResult = fixClaudeRequest(requestBody);
+      requestBody = claudeResult.body;
+      hadThinking = claudeResult.hadThinking;
       needsStreamFix = true;
       bodyChanged = true;
     }
-
-    const claudeResult = fixClaudeRequest(requestBody);
-    requestBody = claudeResult.body;
 
     const beforeChatGPT = requestBody;
     requestBody = fixChatGPTRequest(requestBody);
@@ -155,7 +164,7 @@ function createNexosFetch(baseFetch) {
       requestBody = fixChatGPTTemperature(requestBody);
     }
 
-    if (gemini || codestral || kimi || claude || claudeResult.hadThinking || chatgptChanged || chatgpt) {
+    if (gemini || codestral || kimi || claude || hadThinking || chatgptChanged || chatgpt) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 

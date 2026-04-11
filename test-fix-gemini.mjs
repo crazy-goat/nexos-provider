@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
+import { fixClaudeRequest } from "./fix-claude.mjs";
 
 describe("isGeminiModel", () => {
   it("detects Gemini models case-insensitively", () => {
@@ -340,6 +341,82 @@ describe("fixGeminiRequest - unsupported JSON Schema keywords", () => {
     assert.equal(items.minimum, 0);
     assert.equal(items.maximum, 100);
     assert.equal(items.type, "integer");
+  });
+});
+
+describe("fixGeminiRequest - circular $ref", () => {
+  it("handles circular $ref without infinite loop", () => {
+    const body = {
+      model: "Gemini 2.5 Pro",
+      tools: [{
+        type: "function",
+        function: {
+          name: "test",
+          parameters: {
+            type: "object",
+            $defs: {
+              Node: {
+                type: "object",
+                properties: {
+                  value: { type: "string" },
+                  child: { $ref: "#/$defs/Node" },
+                },
+              },
+            },
+            properties: {
+              root: { $ref: "#/$defs/Node" },
+            },
+          },
+        },
+      }],
+    };
+
+    const result = fixGeminiRequest(body);
+    const root = result.tools[0].function.parameters.properties.root;
+    assert.equal(root.type, "object");
+    assert.equal(root.properties.value.type, "string");
+    assert.deepEqual(root.properties.child, {});
+  });
+
+  it("handles missing $ref target gracefully", () => {
+    const body = {
+      model: "Gemini 2.5 Pro",
+      tools: [{
+        type: "function",
+        function: {
+          name: "test",
+          parameters: {
+            type: "object",
+            properties: {
+              field: { $ref: "#/$defs/DoesNotExist" },
+            },
+          },
+        },
+      }],
+    };
+
+    const result = fixGeminiRequest(body);
+    const field = result.tools[0].function.parameters.properties.field;
+    assert.equal(field.$ref, undefined);
+    assert.equal(Object.keys(field).length, 0);
+  });
+});
+
+describe("fixGeminiThinkingRequest + fixClaudeRequest interaction", () => {
+  it("preserves temperature when Gemini has thinking enabled", () => {
+    const body = {
+      model: "Gemini 2.5 Pro",
+      thinking: { type: "enabled", budgetTokens: 8000 },
+      temperature: 0.7,
+      max_tokens: 16000,
+      messages: [],
+    };
+
+    const geminiResult = fixGeminiThinkingRequest(body);
+    const claudeResult = fixClaudeRequest(geminiResult.body);
+
+    assert.equal(claudeResult.body.temperature, undefined, "fixClaudeRequest should not run on non-Claude models in index.mjs — temperature would be lost");
+    assert.equal(geminiResult.body.temperature, 0.7, "fixGeminiThinkingRequest must preserve temperature");
   });
 });
 
