@@ -4,14 +4,13 @@ import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream
 import { isChatGPTModel, fixChatGPTRequest, fixChatGPTTemperature, fixChatGPTStream } from "./fix-chatgpt.mjs";
 import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
 import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
-import { isKimiModel, fixKimiStream, bufferKimiStream } from "./fix-kimi.mjs";
+import { isKimiModel, createKimiStreamTransform } from "./fix-kimi.mjs";
 
 function fixStreamChunk(text) {
   text = fixGeminiStream(text);
   text = fixClaudeStream(text);
   text = fixChatGPTStream(text);
   text = fixCodestralStream(text);
-  text = fixKimiStream(text);
   return text;
 }
 
@@ -171,7 +170,12 @@ function createNexosFetch(baseFetch) {
     const response = await realFetch(url, init);
 
     if (kimi && requestBody.stream) {
-      return await bufferKimiStream(response, fixStreamChunk);
+      const fixedBody = response.body.pipeThrough(createKimiStreamTransform(fixStreamChunk));
+      return new Response(fixedBody, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     }
 
     if (needsStreamFix && requestBody.stream) {
