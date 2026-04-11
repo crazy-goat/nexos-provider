@@ -2,8 +2,15 @@ export function isClaudeModel(model) {
   return typeof model === "string" && model.toLowerCase().includes("claude");
 }
 
+function isSonnet46(model) {
+  if (typeof model !== "string") return false;
+  const m = model.toLowerCase();
+  return m.includes("sonnet") && (m.includes("4.6") || m.includes("4-6"));
+}
+
 export function fixClaudeCacheControl(body) {
   if (!body.messages?.length) return body;
+  const skipUserBreakpoints = isSonnet46(body.model);
   const systemIndices = [];
   for (let i = 0; i < body.messages.length; i++) {
     if (body.messages[i].role === "system") {
@@ -45,7 +52,7 @@ export function fixClaudeCacheControl(body) {
   }
   const lastNonAssistantIndex = nonAssistantIndices.length > 0 ? nonAssistantIndices[nonAssistantIndices.length - 1] : -1;
   const prevNonAssistantIndex = nonAssistantIndices.length > 1 ? nonAssistantIndices[nonAssistantIndices.length - 2] : -1;
-  if (lastNonAssistantIndex >= 0) {
+  if (!skipUserBreakpoints && lastNonAssistantIndex >= 0) {
     messages = [...messages];
     const msg = messages[lastNonAssistantIndex];
     if (typeof msg.content === "string" && msg.content.length > 0) {
@@ -75,7 +82,7 @@ export function fixClaudeCacheControl(body) {
       }
     }
   }
-  if (prevNonAssistantIndex >= 0) {
+  if (!skipUserBreakpoints && prevNonAssistantIndex >= 0) {
     messages = [...messages];
     const msg = messages[prevNonAssistantIndex];
     if (typeof msg.content === "string" && msg.content.length > 0) {
