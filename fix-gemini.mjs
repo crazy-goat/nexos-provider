@@ -73,28 +73,52 @@ function rewriteToolCallHistory(body) {
   if (!body.messages?.length) return body;
   const messages = [];
   let pendingToolCalls = {};
+  let toolResults = [];
+
+  function flushToolResults() {
+    if (!toolResults.length) return;
+    messages.push({ role: "user", content: toolResults.join("\n\n") });
+    toolResults = [];
+  }
+
   for (const msg of body.messages) {
     if (msg.role === "assistant" && msg.tool_calls?.length) {
+      flushToolResults();
       for (const tc of msg.tool_calls) {
         pendingToolCalls[tc.id] = tc.function;
       }
-      const text = msg.content || "";
-      messages.push({ role: "assistant", content: text });
+      if (msg.content) {
+        messages.push({ role: "assistant", content: msg.content });
+      }
     } else if (msg.role === "tool") {
+      if (!toolResults.length && messages.length && messages[messages.length - 1].role !== "assistant") {
+        messages.push({ role: "assistant", content: "Processing..." });
+      }
       const fn = pendingToolCalls[msg.tool_call_id];
       const toolContent = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
       if (fn) {
         let args = fn.arguments;
         try { args = JSON.stringify(JSON.parse(args)); } catch {}
-        messages.push({ role: "user", content: `<tool_result name="${fn.name}" arguments='${args}'>\n${toolContent}\n</tool_result>` });
+        toolResults.push(`<tool_result name="${fn.name}" arguments='${args}'>\n${toolContent}\n</tool_result>`);
       } else {
-        messages.push({ role: "user", content: toolContent });
+        toolResults.push(toolContent);
       }
     } else {
+      flushToolResults();
       messages.push(msg);
     }
   }
-  return { ...body, messages };
+  flushToolResults();
+  const merged = [];
+  for (const msg of messages) {
+    const prev = merged.length ? merged[merged.length - 1] : null;
+    if (prev && prev.role === msg.role && msg.role === "user") {
+      prev.content = (prev.content || "") + "\n\n" + (msg.content || "");
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+  return { ...body, messages: merged };
 }
 
 export function fixGeminiRequest(body) {
