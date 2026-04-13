@@ -78,8 +78,7 @@ function rewriteToolCallHistory(body) {
       for (const tc of msg.tool_calls) {
         pendingToolCalls[tc.id] = tc.function;
       }
-      const names = msg.tool_calls.map((tc) => tc.function.name).join(", ");
-      const text = (msg.content ? msg.content + "\n" : "") + "Used tools: " + names;
+      const text = msg.content || "";
       messages.push({ role: "assistant", content: text });
     } else if (msg.role === "tool") {
       const fn = pendingToolCalls[msg.tool_call_id];
