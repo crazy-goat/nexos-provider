@@ -74,14 +74,15 @@ function rewriteToolCallHistory(body) {
   const messages = [];
   for (const msg of body.messages) {
     if (msg.role === "assistant" && msg.tool_calls?.length) {
-      const calls = msg.tool_calls.map((tc) =>
-        `[Called tool: ${tc.function.name}(${tc.function.arguments})]`
-      ).join("\n");
-      const text = (msg.content || "") + calls;
+      const parts = msg.tool_calls.map((tc) => {
+        let args = tc.function.arguments;
+        try { args = JSON.stringify(JSON.parse(args), null, 2); } catch {}
+        return `I used ${tc.function.name} with:\n${args}`;
+      });
+      const text = (msg.content ? msg.content + "\n" : "") + parts.join("\n");
       messages.push({ role: "assistant", content: text });
     } else if (msg.role === "tool") {
-      const callId = msg.tool_call_id || "";
-      messages.push({ role: "user", content: `[Tool result${callId ? " for " + callId : ""}]:\n${typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)}` });
+      messages.push({ role: "user", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
     } else {
       messages.push(msg);
     }
