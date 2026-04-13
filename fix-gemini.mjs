@@ -72,12 +72,24 @@ function isGemini3(model) {
 function rewriteToolCallHistory(body) {
   if (!body.messages?.length) return body;
   const messages = [];
+  let pendingToolCalls = {};
   for (const msg of body.messages) {
     if (msg.role === "assistant" && msg.tool_calls?.length) {
-      const text = msg.content || "Done.";
+      for (const tc of msg.tool_calls) {
+        pendingToolCalls[tc.id] = tc.function;
+      }
+      const text = msg.content || "OK";
       messages.push({ role: "assistant", content: text });
     } else if (msg.role === "tool") {
-      messages.push({ role: "user", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+      const fn = pendingToolCalls[msg.tool_call_id];
+      const toolContent = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+      if (fn) {
+        let args = fn.arguments;
+        try { args = JSON.stringify(JSON.parse(args)); } catch {}
+        messages.push({ role: "user", content: `<tool_result name="${fn.name}" arguments='${args}'>\n${toolContent}\n</tool_result>` });
+      } else {
+        messages.push({ role: "user", content: toolContent });
+      }
     } else {
       messages.push(msg);
     }
