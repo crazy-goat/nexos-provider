@@ -7,8 +7,8 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, and Codestral models through nexos.ai API in opencode:
 
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
-- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled, **strips `temperature` for Opus 4.7** (nexos.ai routes Opus 4.7 requests with `temperature` to a guardrails backend where streaming tool calls are broken)
-- **ChatGPT/GPT**: strips `reasoning_effort: "none"` (unsupported), strips `temperature: false` (invalid value), **strips temperature for non-Codex models** (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature)
+- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` in thinking mode (`end_turn`→`stop` and `tool_use`→`tool_calls`, prevents infinite retry loop), adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled, **strips `temperature` for Opus 4.7** (nexos.ai routes Opus 4.7 requests with `temperature` to a guardrails backend where streaming tool calls are broken)
+- **ChatGPT/GPT**: strips `reasoning_effort: "none"` **only for legacy / non-reasoning models** (GPT 4.x, `Chat`, `Instant`, `oss` — modern GPT 5.x accept `"none"` natively), strips `temperature: false` (invalid value), **strips temperature for non-Codex models** (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature)
 - **Codex**: transparently redirects requests to `/v1/responses` (Responses API) — Codex models don't support `/v1/chat/completions`. Handles streaming, tool calls, reasoning effort, and cache token reporting.
 - **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
 
@@ -113,8 +113,8 @@ The provider exports `createNexosAI` which creates a standard AI SDK provider wi
 opencode → createNexosAI → fetch wrapper → nexos.ai API
                                │
                                ├─ fix-gemini.mjs: $ref inlining, finish_reason fix
-                               ├─ fix-claude.mjs: thinking params, end_turn→stop
-                               ├─ fix-chatgpt.mjs: strips reasoning_effort:"none"
+                               ├─ fix-claude.mjs: thinking params, end_turn/tool_use → stop/tool_calls
+                               ├─ fix-chatgpt.mjs: strips reasoning_effort:"none" for legacy models
                                ├─ fix-codex.mjs: chat completions → Responses API
                                └─ fix-codestral.mjs: strict:null→false in tools
 ```
@@ -167,8 +167,8 @@ The `known-bugs/` directory documents every API quirk the provider works around,
 ### Claude
 
 - **[claude-prompt-caching](known-bugs/claude-prompt-caching/)** — `cache_control` marker strategy (4 breakpoints: system, tools, latest user, previous user) + break-even math and real-session savings.
-- **[claude-finish-reason-end-turn](known-bugs/claude-finish-reason-end-turn/)** — Claude emits `finish_reason: "end_turn"`; opencode expects `stop`. Without the rewrite, opencode retries indefinitely.
-- **[claude-thinking-params](known-bugs/claude-thinking-params/)** — `budgetTokens` → `budget_tokens` (snake_case), strip disabled `thinking`, bump `max_tokens` when budget exceeds it, strip `temperature` while thinking is enabled.
+- **[claude-finish-reason-end-turn](known-bugs/claude-finish-reason-end-turn/)** — In thinking mode, Claude leaks `end_turn` (natural end) and `tool_use` (tool call end) where opencode expects `stop` / `tool_calls`. Without the rewrites, opencode retries indefinitely on every thinking-mode turn.
+- **[claude-thinking-params](known-bugs/claude-thinking-params/)** — `budgetTokens` → `budget_tokens` (snake_case), bump `max_tokens` when budget exceeds it, strip `temperature` while thinking is enabled. (Historical: `thinking: {type: "disabled"}` stripping — upstream now accepts it, fix is a pass-through.)
 - **[claude-opus-47-temperature](known-bugs/claude-opus-47-temperature/)** — Opus 4.7 with any `temperature` routes to a guardrails backend where streaming tool calls are broken. Provider strips `temperature` for Opus 4.7.
 - **[claude-sonnet-46-cache](known-bugs/claude-sonnet-46-cache/)** — Sonnet 4.6 on vertex-ai invalidates cache when `cache_control` is on user messages; also a higher minimum token threshold than documented.
 - **[claude-cached-tokens-reporting](known-bugs/claude-cached-tokens-reporting/)** — Opus models only report cache via `prompt_tokens_details.cached_tokens`; provider sums it into `prompt_tokens` for opencode's usage display.
@@ -181,7 +181,7 @@ The `known-bugs/` directory documents every API quirk the provider works around,
 
 ### GPT / Codex
 
-- **[gpt-chat-completions-limits](known-bugs/gpt-chat-completions-limits/)** — nexos.ai chat completions rejects `reasoning_effort: "none"`, `temperature: false`, and custom `temperature` for non-Codex GPT models.
+- **[gpt-chat-completions-limits](known-bugs/gpt-chat-completions-limits/)** — Legacy / non-reasoning GPT models (GPT 4.x, `Chat`, `Instant`, `oss`) reject `reasoning_effort: "none"`; modern GPT 5.x accept it. Plus `temperature: false` and custom `temperature` are rejected for all non-Codex GPT models.
 - **[codex-responses-api](known-bugs/codex-responses-api/)** — Codex models require `/v1/responses`, not `/v1/chat/completions`. Provider redirects the URL and converts both directions (request schema + SSE stream + usage).
 
 ### Codestral

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.13.0] - 2026-04-17
+
+### Added
+- **`tool_use` → `tool_calls` rewrite in `fixClaudeStream`** — in thinking mode Claude emits `finish_reason: "tool_use"` (Anthropic-native) instead of the OpenAI-compatible `"tool_calls"` for tool-invoking turns. Verified on all 5 current Claude models (Sonnet 4.5, Sonnet 4.6, Opus 4.6, Opus 4.7, Haiku 4.5). Without the rewrite AI SDK maps it to `"other"` and opencode retries on every tool call made under `/high` or `/low` variants. See `known-bugs/claude-finish-reason-end-turn/` for the expanded reproduction map.
+- **`isLegacyChatGPTModel()` heuristic** — `fix-chatgpt.mjs` now detects non-reasoning GPT variants (GPT 4.x, `*Chat*`, `*Instant*`, `gpt-oss*`) and only strips `reasoning_effort:"none"` for those. Modern GPT 5/5.2/5.4 accept `"none"` natively, so the provider no longer rewrites their requests. Verified direct against nexos.ai and end-to-end through opencode (simple + tool-call + `/high` / `/low` variants) — all 6 modern GPT models work without stripping.
+
+### Changed
+- **`thinking: {type: "disabled"}` is now a pass-through** — previously stripped by `fixClaudeRequest`. Verified 2026-04-17 that all 5 Claude models on nexos.ai accept `{type: "disabled"}` in non-stream, stream, and stream+tool modes; the strip was dead code against current upstream behavior. Kept the early-return so disabled requests skip camelCase conversion and `temperature` stripping. See `known-bugs/claude-thinking-params/` for the historical note.
+
 ## [1.12.0] - 2026-04-17
 
 ### Fixed

@@ -133,10 +133,8 @@ export function fixClaudeRequest(body) {
     const { temperature, ...rest } = body;
     body = rest;
   }
-  if (!body.thinking) return { body, hadThinking: false };
-  if (body.thinking.type === "disabled") {
-    const { thinking, ...rest } = body;
-    return { body: rest, hadThinking: true };
+  if (!body.thinking || body.thinking.type === "disabled") {
+    return { body, hadThinking: false };
   }
   const thinking = { ...body.thinking };
   if (thinking.budgetTokens !== undefined && thinking.budget_tokens === undefined) {
@@ -160,6 +158,10 @@ export function fixClaudeStream(text) {
         for (const choice of parsed.choices) {
           if (choice.finish_reason === "end_turn") {
             choice.finish_reason = "stop";
+            changed = true;
+          }
+          if (choice.finish_reason === "tool_use") {
+            choice.finish_reason = "tool_calls";
             changed = true;
           }
         }

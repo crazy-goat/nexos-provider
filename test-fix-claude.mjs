@@ -113,14 +113,15 @@ describe("fixClaudeRequest", () => {
     assert.equal(result.hadThinking, false);
   });
 
-  it("removes thinking when type is disabled", () => {
+  it("passes through disabled thinking unchanged (upstream accepts it)", () => {
     const body = {
       model: "Claude Sonnet 4.5",
       thinking: { type: "disabled", budgetTokens: 1024 },
     };
     const result = fixClaudeRequest(body);
-    assert.equal(result.body.thinking, undefined);
-    assert.equal(result.hadThinking, true);
+    assert.deepEqual(result.body.thinking, { type: "disabled", budgetTokens: 1024 });
+    assert.equal(result.hadThinking, false);
+    assert.equal(result.body.temperature, undefined);
   });
 
   it("converts budgetTokens to budget_tokens", () => {
@@ -174,6 +175,19 @@ describe("fixClaudeStream", () => {
 
   it("does not change stop finish_reason", () => {
     const input = 'data: {"choices":[{"finish_reason":"stop","delta":{}}]}\n';
+    const result = fixClaudeStream(input);
+    assert.equal(result, input);
+  });
+
+  it("converts tool_use to tool_calls (emitted in thinking + tool mode)", () => {
+    const input = 'data: {"choices":[{"finish_reason":"tool_use","delta":{}}]}\n';
+    const result = fixClaudeStream(input);
+    const parsed = JSON.parse(result.replace("data: ", "").trim());
+    assert.equal(parsed.choices[0].finish_reason, "tool_calls");
+  });
+
+  it("does not change tool_calls finish_reason", () => {
+    const input = 'data: {"choices":[{"finish_reason":"tool_calls","delta":{}}]}\n';
     const result = fixClaudeStream(input);
     assert.equal(result, input);
   });

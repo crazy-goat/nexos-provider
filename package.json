@@ -1,6 +1,6 @@
 {
   "name": "@crazy-goat/nexos-provider",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Custom AI SDK provider for nexos.ai models (Gemini, Claude, GPT, Codex, Codestral, Kimi) in opencode",
   "type": "module",
   "main": "index.mjs",
