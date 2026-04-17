@@ -162,12 +162,40 @@ Results are saved to [`check-models/checks.md`](check-models/checks.md) — see 
 
 ## Known Bugs
 
-The `known-bugs/` directory contains documentation and test scripts for known API issues:
+The `known-bugs/` directory documents every API quirk the provider works around, one folder per issue. Each folder has a README and, where empirical reproduction adds value, a test script.
 
-- **[token-caching](known-bugs/token-caching/)** — Gemini implicit caching does not do prefix matching (only caches identical requests). Claude and GPT prefix caching works correctly. Gemini explicit caching works but nexos.ai does not expose the `cachedContents` API.
-- **[gemini3-tools](known-bugs/gemini3-tools/)** — Gemini 3 models (Flash Preview, Pro Preview) fail on multi-turn tool calling due to missing `thought_signature` support in nexos.ai API
-- **[claude-opus-47-temperature](known-bugs/claude-opus-47-temperature/)** — Claude Opus 4.7 with `temperature` gets routed to a guardrails backend where streaming tool calls are broken (no `tool_calls` deltas, only `finish_reason: "tool_use"`). The provider strips `temperature` for Opus 4.7 as a workaround.
-- **[thinking](known-bugs/thinking/)** — Test script for thinking/reasoning blocks across models
+### Claude
+
+- **[claude-prompt-caching](known-bugs/claude-prompt-caching/)** — `cache_control` marker strategy (4 breakpoints: system, tools, latest user, previous user) + break-even math and real-session savings.
+- **[claude-finish-reason-end-turn](known-bugs/claude-finish-reason-end-turn/)** — Claude emits `finish_reason: "end_turn"`; opencode expects `stop`. Without the rewrite, opencode retries indefinitely.
+- **[claude-thinking-params](known-bugs/claude-thinking-params/)** — `budgetTokens` → `budget_tokens` (snake_case), strip disabled `thinking`, bump `max_tokens` when budget exceeds it, strip `temperature` while thinking is enabled.
+- **[claude-opus-47-temperature](known-bugs/claude-opus-47-temperature/)** — Opus 4.7 with any `temperature` routes to a guardrails backend where streaming tool calls are broken. Provider strips `temperature` for Opus 4.7.
+- **[claude-sonnet-46-cache](known-bugs/claude-sonnet-46-cache/)** — Sonnet 4.6 on vertex-ai invalidates cache when `cache_control` is on user messages; also a higher minimum token threshold than documented.
+- **[claude-cached-tokens-reporting](known-bugs/claude-cached-tokens-reporting/)** — Opus models only report cache via `prompt_tokens_details.cached_tokens`; provider sums it into `prompt_tokens` for opencode's usage display.
+
+### Gemini
+
+- **[gemini-schema-restrictions](known-bugs/gemini-schema-restrictions/)** — Vertex AI rejects many JSON Schema keywords (`$ref`, `exclusiveMinimum`, `patternProperties`, `if/then/else`, `not`, `$schema`, etc.). Provider inlines refs and strips the rest.
+- **[gemini-stream-format](known-bugs/gemini-stream-format/)** — Four stream-format issues bundled: missing `[DONE]` sentinel, uppercase `STOP`, `stop` instead of `tool_calls` for tool use, `content_blocks[].delta.thinking` instead of `reasoning_content`.
+- **[gemini3-tools](known-bugs/gemini3-tools/)** — Gemini 3 / 3.1 reject multi-turn tool-use replays because nexos.ai does not propagate `thought_signature`. Provider rewrites history into plain alternating turns.
+
+### GPT / Codex
+
+- **[gpt-chat-completions-limits](known-bugs/gpt-chat-completions-limits/)** — nexos.ai chat completions rejects `reasoning_effort: "none"`, `temperature: false`, and custom `temperature` for non-Codex GPT models.
+- **[codex-responses-api](known-bugs/codex-responses-api/)** — Codex models require `/v1/responses`, not `/v1/chat/completions`. Provider redirects the URL and converts both directions (request schema + SSE stream + usage).
+
+### Codestral
+
+- **[codestral-strict-null](known-bugs/codestral-strict-null/)** — Mistral API rejects `strict: null` in tool function definitions. Provider coerces `null` → `false`.
+
+### Kimi / GLM
+
+- **[kimi-fireworks-stream](known-bugs/kimi-fireworks-stream/)** — Kimi and GLM on fireworks-ai stream without `data: [DONE]` or `usage` chunk. Provider's `TransformStream` synthesizes both on flush while preserving progressive streaming.
+
+### Cross-provider
+
+- **[token-caching](known-bugs/token-caching/)** — Prefix caching matrix across Gemini / Claude / GPT. Gemini implicit caching only matches identical requests (no prefix match); explicit `cachedContents` API is not exposed by nexos.ai.
+- **[thinking](known-bugs/thinking/)** — Test harness for thinking / reasoning token reporting across models.
 
 ## License
 
