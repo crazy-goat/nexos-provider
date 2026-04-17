@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.12.0] - 2026-04-17
+
+### Fixed
+- **Claude Opus 4.7 streaming tool calls broken when `temperature` is present** — nexos.ai routes Opus 4.7 requests with `temperature` (any value) to a guardrails-enabled backend where streaming tool calls are broken: the response streams only empty `content` deltas and a final `finish_reason: "tool_use"` with no `tool_calls`/`arguments` deltas, so opencode never receives the tool invocation. `fixClaudeRequest` now strips `temperature` for Opus 4.7 regardless of `thinking` state. Other Claude models (Sonnet 4.5/4.6, Opus 4.6) tolerate `temperature` and are unaffected. See `known-bugs/claude-opus-47-temperature/` for details.
+- **SSE stream buffering** — `appendDoneToStream()` now buffers SSE events by `\n\n` boundaries so `end_turn`→`stop` conversion no longer fails on TCP-split chunks (previously caused 2-minute client timeouts).
+- **Sonnet 4.6 cache invalidation on vertex-ai** — Sonnet 4.6 invalidates cache when `cache_control` appears on user/tool_result messages. `fixClaudeCacheControl` now skips user-message breakpoints for Sonnet 4.6 (system + tools breakpoints still applied). See `known-bugs/claude-sonnet-46-cache/` for details.
+- **Kimi progressive streaming** — `bufferKimiStream` (introduced in 1.9.1) waited for the entire response before emitting, so users saw no streaming. Replaced with a `TransformStream` that buffers by `\n\n` boundaries and emits chunks as they arrive, while still appending `usage` + `[DONE]` in flush. The original flush()-reentry workaround is no longer needed thanks to the 1.10.0 SDK upgrade.
+- **`fixClaudeRequest` scope** — moved inside the `if (claude)` guard in `index.mjs` so it no longer strips `temperature` from Gemini requests that enable thinking.
+
+### Added
+- **4th cache breakpoint on previous user message** — `fixClaudeCacheControl` now adds a second sliding breakpoint for multi-turn conversation history caching.
+- **Gemini 3 / 3.1 multi-turn tool calling workaround** — Gemini 3/Pro Preview and Gemini 3.1 reject follow-up requests that reference prior tool calls because nexos.ai does not propagate `thought_signature`. `fix-gemini.mjs` rewrites tool-using history into plain alternating user/assistant turns (tool calls described as text, results injected as user content) so multi-turn tool workflows continue to function. See `known-bugs/gemini3-tools/` for details.
+- **GLM 5 support** — added to the `fireworks-ai` stream-buffering fix path (same issue profile as Kimi).
+- **Circular `$ref` protection** — `resolveRefs` returns `{}` instead of recursing infinitely when a schema contains cyclic references.
+
+## [1.11.0] - 2026-03-30
+
+### Note
+Published to npm but not tracked in git (ad-hoc release). All changes from this release are captured in 1.12.0, which is the authoritative continuation of the 1.10.0 git state.
+
+## [1.10.0] - 2026-03-30
+
+### Changed
+- **Upgrade `@ai-sdk/openai-compatible` from 1.0.32 to 2.0.37** to match opencode's bundled version. Removes the `fixClaudeMessages` "dot workaround" that was needed under the older SDK to satisfy Claude's "conversation must end with user" requirement.
+
+## [1.9.1] - 2026-03-29
+
+### Added
+- **Kimi stream buffering fix** — new `fix-kimi.mjs` module. Buffers entire SSE stream (instead of `TransformStream`) to work around `flush()` being called multiple times by the AI SDK. Appends missing `[DONE]` and usage chunks for Kimi streaming responses.
+- 20 new tests (87 total, all passing).
+
+### Fixed
+- **Claude "assistant message prefill" error** — `fix-claude.mjs` appends an empty user message when the last message is from the assistant (Claude requires conversations to end with a user turn).
+
 ## [1.9.0] - 2026-03-18
 
 ### Fixed
@@ -29,7 +63,17 @@ All notable changes to this project will be documented in this file.
 - **Claude**: strip `temperature` from request body when thinking is enabled (API rejects `temperature` with thinking).
 - **ChatGPT**: strip `temperature` from request body when set to `false` (invalid value rejected by API).
 
-## [1.3.5] - 2025
+## [1.6.0] - 2026-02-13
+
+### Added
+- **Claude multi-turn caching** — `fixClaudeCacheControl` now adds `cache_control: {"type": "ephemeral"}` to the last non-assistant message (user or tool_result), in addition to the existing system prompt and tool-definition breakpoints. Creates a rolling cache of conversation history so subsequent turns get cache reads over prior tool_results and user messages.
+
+## [1.4.0] - 2026-02-13
+
+### Fixed
+- **Claude Opus `prompt_tokens` excludes cached tokens** — Opus reports cached input via `prompt_tokens_details.cached_tokens` while keeping `prompt_tokens` as uncached-only. `fixClaudeStream` now adds `cached_tokens` into `prompt_tokens` on streamed usage chunks so opencode's usage display reflects the full input volume.
+
+## [1.3.5] - 2026-02-12
 
 ### Added
 - `known-bugs/token-caching/` — comprehensive token caching tests and documentation for all providers.
@@ -40,18 +84,18 @@ All notable changes to this project will be documented in this file.
   - Claude and GPT prefix caching works correctly through nexos.ai.
 - `known-bugs/thinking/` — documented thinking blocks known bug.
 
-## [1.3.4] - 2025
+## [1.3.4] - 2026-02-11
 
 ### Fixed
 - Include README.md in npm package.
 
-## [1.3.3] - 2025
+## [1.3.3] - 2026-02-11
 
 ### Added
 - `check-models/` directory with automated model compatibility testing script.
 - `known-bugs/gemini3-tools/` directory with test script and documentation for Gemini 3 tool calling issue.
 
-## [1.3.2] - 2025
+## [1.3.2] - 2026-02-09
 
 ### Removed
 - Removed `list-models.mjs` CLI tool (use [opencode-nexos-models-config](https://github.com/crazy-goat/opencode-nexos-models-config) instead).
@@ -60,12 +104,12 @@ All notable changes to this project will be documented in this file.
 - Added update instructions to README.
 - Cleaned up `package.json` (`bin`, `scripts` fields removed).
 
-## [1.3.1] - 2025
+## [1.3.1] - 2026-02-09
 
 ### Fixed
 - Include `fix-gemini.mjs`, `fix-claude.mjs`, and `fix-chatgpt.mjs` in published npm package (missing from `files` field since 1.2.2).
 
-## [1.3.0] - 2025
+## [1.3.0] - 2026-02-09
 
 ### Added
 - **Gemini thinking support** — new `fixGeminiThinkingRequest()` function handles `budgetTokens` → `budget_tokens` conversion, strips disabled thinking, and adjusts `max_tokens` when budget exceeds it.
@@ -80,26 +124,26 @@ All notable changes to this project will be documented in this file.
 - Request body re-serialization now also triggers when ChatGPT request was modified.
 - Updated `AGENTS.md` with Gemini thinking fixes (#4–#8), ChatGPT fix, variant naming rules, and Gemini thinking test command.
 
-## [1.2.2] - 2025
+## [1.2.2] - 2026-02-08
 
 ### Changed
 - Simplified README, updated provider name to `nexos-ai`.
 - Refactored provider fixes into per-model modules (`fix-gemini.mjs`, `fix-claude.mjs`, `fix-chatgpt.mjs`).
 - Updated documentation with Claude and ChatGPT support.
 
-## [1.1.0] - 2025
+## [1.1.0] - 2026-02-08
 
 ### Added
 - Claude support with thinking params normalization and `end_turn` → `stop` finish reason fix.
 - ChatGPT support (passthrough).
 - Multi-provider architecture.
 
-## [1.0.1] - 2025
+## [1.0.1] - 2026-02-08
 
 ### Fixed
 - Minor bug fixes.
 
-## [1.0.0] - 2025
+## [1.0.0] - 2026-02-08
 
 ### Added
 - Initial release: custom AI SDK provider for nexos.ai Gemini models.

@@ -7,7 +7,7 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, and Codestral models through nexos.ai API in opencode:
 
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
-- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled
+- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` (`end_turn`→`stop`, prevents infinite retry loop), strips `thinking` object when disabled, adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled, **strips `temperature` for Opus 4.7** (nexos.ai routes Opus 4.7 requests with `temperature` to a guardrails backend where streaming tool calls are broken)
 - **ChatGPT/GPT**: strips `reasoning_effort: "none"` (unsupported), strips `temperature: false` (invalid value), **strips temperature for non-Codex models** (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature)
 - **Codex**: transparently redirects requests to `/v1/responses` (Responses API) — Codex models don't support `/v1/chat/completions`. Handles streaming, tool calls, reasoning effort, and cache token reporting.
 - **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
@@ -166,6 +166,7 @@ The `known-bugs/` directory contains documentation and test scripts for known AP
 
 - **[token-caching](known-bugs/token-caching/)** — Gemini implicit caching does not do prefix matching (only caches identical requests). Claude and GPT prefix caching works correctly. Gemini explicit caching works but nexos.ai does not expose the `cachedContents` API.
 - **[gemini3-tools](known-bugs/gemini3-tools/)** — Gemini 3 models (Flash Preview, Pro Preview) fail on multi-turn tool calling due to missing `thought_signature` support in nexos.ai API
+- **[claude-opus-47-temperature](known-bugs/claude-opus-47-temperature/)** — Claude Opus 4.7 with `temperature` gets routed to a guardrails backend where streaming tool calls are broken (no `tool_calls` deltas, only `finish_reason: "tool_use"`). The provider strips `temperature` for Opus 4.7 as a workaround.
 - **[thinking](known-bugs/thinking/)** — Test script for thinking/reasoning blocks across models
 
 ## License

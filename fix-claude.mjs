@@ -8,6 +8,12 @@ function isSonnet46(model) {
   return m.includes("sonnet") && (m.includes("4.6") || m.includes("4-6"));
 }
 
+function isOpus47(model) {
+  if (typeof model !== "string") return false;
+  const m = model.toLowerCase();
+  return m.includes("opus") && (m.includes("4.7") || m.includes("4-7"));
+}
+
 export function fixClaudeCacheControl(body) {
   if (!body.messages?.length) return body;
   const skipUserBreakpoints = isSonnet46(body.model);
@@ -123,6 +129,10 @@ export function fixClaudeCacheControl(body) {
 }
 
 export function fixClaudeRequest(body) {
+  if (isOpus47(body.model) && body.temperature !== undefined) {
+    const { temperature, ...rest } = body;
+    body = rest;
+  }
   if (!body.thinking) return { body, hadThinking: false };
   if (body.thinking.type === "disabled") {
     const { thinking, ...rest } = body;

@@ -134,6 +134,25 @@ describe("fixClaudeRequest", () => {
     assert.equal(result.hadThinking, true);
   });
 
+  it("strips temperature for Opus 4.7 without thinking", () => {
+    const body = {
+      model: "Claude Opus 4.7",
+      temperature: 0.2,
+      messages: [{ role: "user", content: "hi" }],
+    };
+    const result = fixClaudeRequest(body);
+    assert.equal(result.body.temperature, undefined);
+    assert.equal(result.hadThinking, false);
+  });
+
+  it("keeps temperature for non-Opus-4.7 Claude models without thinking", () => {
+    for (const model of ["Claude Sonnet 4.5", "Claude Sonnet 4.6", "Claude Opus 4.6"]) {
+      const body = { model, temperature: 0.2, messages: [] };
+      const result = fixClaudeRequest(body);
+      assert.equal(result.body.temperature, 0.2, `failed for ${model}`);
+    }
+  });
+
   it("bumps max_tokens when <= budget_tokens", () => {
     const body = {
       model: "Claude Sonnet 4.5",
