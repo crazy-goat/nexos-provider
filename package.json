@@ -1,7 +1,7 @@
 {
   "name": "@crazy-goat/nexos-provider",
-  "version": "1.13.0",
-  "description": "Custom AI SDK provider for nexos.ai models (Gemini, Claude, GPT, Codex, Codestral, Kimi) in opencode",
+  "version": "1.14.0",
+  "description": "Custom AI SDK provider for nexos.ai models (Gemini, Claude, GPT, Codex, Mistral, Codestral, Kimi) in opencode",
   "type": "module",
   "main": "index.mjs",
   "exports": {
@@ -15,7 +15,7 @@
     "fix-gemini.mjs",
     "fix-claude.mjs",
     "fix-chatgpt.mjs",
-    "fix-codestral.mjs",
+    "fix-mistral.mjs",
     "fix-codex.mjs",
     "fix-kimi.mjs",
     "README.md"

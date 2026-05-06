@@ -8,7 +8,7 @@ Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models 
 - `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, unsupported JSON Schema keyword stripping, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
 - `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens, Opus 4.7 temperature strip). Note: `fixClaudeRequest` only runs for Claude models (not globally) to avoid stripping temperature from non-Claude models with thinking.
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
-- `fix-codestral.mjs` — Codestral-specific fixes (strips `strict: null` from tool definitions)
+- `fix-mistral.mjs` — Mistral/Codestral fixes (strips `strict: null` from tool definitions for any model whose name contains `mistral` or `codestral`)
 - `fix-codex.mjs` — Codex-specific fixes (full chat completions → Responses API translation)
 - `fix-kimi.mjs` — Kimi/GLM (fireworks-ai) fixes (stream TransformStream for missing `[DONE]` and usage, model detection)
 - `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@2.0.37`)
@@ -54,8 +54,9 @@ Fixes issues when using models through nexos.ai API:
 ### Codex
 1. **Not a chat model** — Codex models (e.g., `GPT 5.3 Codex`) do not support `/v1/chat/completions`. The API returns "This is not a chat model". The provider intercepts Codex requests and redirects them to `/v1/responses` (Responses API), converting the chat completions request format to Responses API format and converting the response/stream back to chat completions format so opencode can process it transparently.
 
-### Codestral
-1. **`strict: null` in tool definitions** — AI SDK / nexos.ai adds `strict: null` to tool function definitions. Mistral API rejects `null` for this field (expects boolean or absent). The provider sets `strict` to `false` when it's `null` or `undefined` (nexos.ai re-adds `strict: null` if the field is absent, so deletion doesn't work).
+### Mistral / Codestral
+1. **`strict: null` in tool definitions** — AI SDK / nexos.ai adds `strict: null` to tool function definitions. Mistral API rejects `null` for this field (expects boolean or absent). The provider sets `strict` to `false` when it's `null` or `undefined` (nexos.ai re-adds `strict: null` if the field is absent, so deletion doesn't work). Applies to all Mistral-family models (`Mistral Medium 3.5`, `Mistral Small 4`, `codestral-*`).
+2. **Streaming works** — `Mistral Medium 3.5` streams progressively via `/v1/chat/completions` (TTFT ~0.9s, ~280ms inter-batch gap, ~620 chars/s visible throughput). Earlier reports of "no streaming" were a false alarm caused by short test prompts that complete in a single TCP burst before any streaming progression is visible.
 
 ## Architecture
 
@@ -81,9 +82,10 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │   ├─ convertChatToResponsesRequest(): chat completions → Responses API request
                                     │   └─ createResponsesStreamConverter(): Responses API SSE → chat completions SSE
                                     │
-                                    ├─ fix-codestral.mjs
-                                    │   ├─ fixCodestralRequest(): sets strict:false when strict is null/undefined in tool definitions
-                                    │   └─ fixCodestralStream(): passthrough
+                                    ├─ fix-mistral.mjs
+                                    │   ├─ isMistralModel(): detects Mistral and Codestral models by name
+                                    │   ├─ fixMistralRequest(): sets strict:false when strict is null/undefined in tool definitions
+                                    │   └─ fixMistralStream(): passthrough
                                     │
                                     ├─ fix-kimi.mjs
                                     │   ├─ isKimiModel(): detects Kimi and GLM (fireworks-ai) models by name
@@ -115,7 +117,7 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 | **Claude (Anthropic)** | Works with fix | Requires `cache_control: {"type": "ephemeral"}` markers on system messages and tools | Yes — `fixClaudeCacheControl()` adds markers automatically |
 | **GPT (OpenAI)** | Works automatically | Auto prefix caching (min 1024 tokens), no markers needed | No |
 | **Gemini (Vertex AI)** | Implicit caching (automatic) | Vertex AI has implicit caching enabled by default for Gemini 2.5 (min 2048 tokens, 90% discount). Works automatically but nexos.ai does not report `cached_tokens` in responses — savings are applied on billing side | No fix needed (or possible) |
-| **Codestral (Mistral)** | Not supported | Mistral API does not support prompt caching | Cannot fix in provider |
+| **Mistral / Codestral** | Not supported | Mistral API does not support prompt caching | Cannot fix in provider |
 
 ### Vision / Image Input
 
@@ -156,7 +158,7 @@ All vision-capable models in `opencode.json` MUST have this field. Models confir
 - Test Claude models with thinking variants: `Claude Sonnet 4.5`, `Claude Opus 4.5`
 - Test ChatGPT models with reasoning effort: `GPT 5`, `GPT 5.2`, `GPT 4.1`
 - Test Codex models: `GPT 5.3 Codex`
-- Test Codestral models with tool use: `codestral-2508`
+- Test Mistral/Codestral models with tool use: `Mistral Medium 3.5`, `codestral-2508`
 - Test both simple prompts (`what is 2+2?`) and tool-use prompts (`list files in current directory`)
 - Test command: `opencode run "what is 2+2?" -m "nexos-ai/Gemini 2.5 Pro"`
 - Claude thinking test: `opencode run "what is 2+2?" -m "nexos-ai/Claude Sonnet 4.5" --variant thinking-high`

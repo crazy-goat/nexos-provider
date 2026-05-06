@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.14.0] - 2026-05-06
+
+### Changed
+- **Renamed `fix-codestral.mjs` → `fix-mistral.mjs`** — the `strict: null` → `strict: false` tool-definition coercion now matches every model whose name contains `mistral` or `codestral`, not just `codestral`. Verified end-to-end against `Mistral Medium 3.5` on nexos.ai (tool use + streaming, both via direct curl and through opencode). Old `fix-codestral.mjs` and its test file removed; tests rewritten in `test-fix-mistral.mjs` with broader matcher coverage.
+
+### Verified
+- **Mistral Medium 3.5 streaming works fine on nexos.ai** — direct measurements via `/v1/chat/completions` with cache-busted prompts show TTFT ≈ 0.86s, ~280ms median inter-batch gap, ~620 chars/s visible throughput over 6s for a 3.7k-character response. Earlier internal report of "no streaming" was a false alarm: the test prompt (`count from 1 to 10`) produced ~30 chars in <0.3s, so the entire response arrived in a single TCP burst before any streaming progression could be observed. Tool calls in streams arrive as a single chunk with full `arguments` + `finish_reason: "tool_calls"` + `usage`, which is OpenAI-spec-compliant and AI SDK handles natively. No proxy changes were needed for streaming.
+- nexos.ai `/v1/conversations` endpoint returns 403 "Action is not allowed" for the `internal` account tier, so per-model routing cannot be controlled from the client side. `/v1/chat/completions` is the only reachable path and works for Mistral with both stream and tools.
+
+### Chore
+- `.DS_Store` added to `.gitignore`.
+
 ## [1.13.0] - 2026-04-17
 
 ### Added

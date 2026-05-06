@@ -2,7 +2,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
 import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
 import { isChatGPTModel, fixChatGPTRequest, fixChatGPTTemperature, fixChatGPTStream } from "./fix-chatgpt.mjs";
-import { isCodestralModel, fixCodestralRequest, fixCodestralStream } from "./fix-codestral.mjs";
+import { isMistralModel, fixMistralRequest, fixMistralStream } from "./fix-mistral.mjs";
 import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
 import { isKimiModel, createKimiStreamTransform } from "./fix-kimi.mjs";
 
@@ -10,7 +10,7 @@ function fixStreamChunk(text) {
   text = fixGeminiStream(text);
   text = fixClaudeStream(text);
   text = fixChatGPTStream(text);
-  text = fixCodestralStream(text);
+  text = fixMistralStream(text);
   return text;
 }
 
@@ -125,7 +125,7 @@ function createNexosFetch(baseFetch) {
     }
 
     const gemini = isGeminiModel(requestBody.model);
-    const codestral = isCodestralModel(requestBody.model);
+    const mistral = isMistralModel(requestBody.model);
     const kimi = isKimiModel(requestBody.model);
     const claude = isClaudeModel(requestBody.model);
     let needsStreamFix = gemini;
@@ -139,8 +139,8 @@ function createNexosFetch(baseFetch) {
       bodyChanged = true;
     }
 
-    if (codestral) {
-      requestBody = fixCodestralRequest(requestBody);
+    if (mistral) {
+      requestBody = fixMistralRequest(requestBody);
       bodyChanged = true;
     }
 
@@ -163,7 +163,7 @@ function createNexosFetch(baseFetch) {
       requestBody = fixChatGPTTemperature(requestBody);
     }
 
-    if (gemini || codestral || kimi || claude || hadThinking || chatgptChanged || chatgpt) {
+    if (gemini || mistral || kimi || claude || hadThinking || chatgptChanged || chatgpt) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 

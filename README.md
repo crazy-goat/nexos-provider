@@ -4,13 +4,13 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 
 ## What it does
 
-Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, and Codestral models through nexos.ai API in opencode:
+Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, Mistral, and Codestral models through nexos.ai API in opencode:
 
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
 - **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` in thinking mode (`end_turn`→`stop` and `tool_use`→`tool_calls`, prevents infinite retry loop), adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled, **strips `temperature` for Opus 4.7** (nexos.ai routes Opus 4.7 requests with `temperature` to a guardrails backend where streaming tool calls are broken)
 - **ChatGPT/GPT**: strips `reasoning_effort: "none"` **only for legacy / non-reasoning models** (GPT 4.x, `Chat`, `Instant`, `oss` — modern GPT 5.x accept `"none"` natively), strips `temperature: false` (invalid value), **strips temperature for non-Codex models** (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature)
 - **Codex**: transparently redirects requests to `/v1/responses` (Responses API) — Codex models don't support `/v1/chat/completions`. Handles streaming, tool calls, reasoning effort, and cache token reporting.
-- **Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field)
+- **Mistral / Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field). Applies to all models whose name contains `mistral` or `codestral`.
 
 ## Setup
 
@@ -116,7 +116,7 @@ opencode → createNexosAI → fetch wrapper → nexos.ai API
                                ├─ fix-claude.mjs: thinking params, end_turn/tool_use → stop/tool_calls
                                ├─ fix-chatgpt.mjs: strips reasoning_effort:"none" for legacy models
                                ├─ fix-codex.mjs: chat completions → Responses API
-                               └─ fix-codestral.mjs: strict:null→false in tools
+                               └─ fix-mistral.mjs: strict:null→false in tools (Mistral + Codestral)
 ```
 
 ## Testing
@@ -184,9 +184,9 @@ The `known-bugs/` directory documents every API quirk the provider works around,
 - **[gpt-chat-completions-limits](known-bugs/gpt-chat-completions-limits/)** — Legacy / non-reasoning GPT models (GPT 4.x, `Chat`, `Instant`, `oss`) reject `reasoning_effort: "none"`; modern GPT 5.x accept it. Plus `temperature: false` and custom `temperature` are rejected for all non-Codex GPT models.
 - **[codex-responses-api](known-bugs/codex-responses-api/)** — Codex models require `/v1/responses`, not `/v1/chat/completions`. Provider redirects the URL and converts both directions (request schema + SSE stream + usage).
 
-### Codestral
+### Mistral / Codestral
 
-- **[codestral-strict-null](known-bugs/codestral-strict-null/)** — Mistral API rejects `strict: null` in tool function definitions. Provider coerces `null` → `false`.
+- **[codestral-strict-null](known-bugs/codestral-strict-null/)** — Mistral API rejects `strict: null` in tool function definitions. Provider coerces `null` → `false`. Applies to both `codestral-*` and `Mistral *` models.
 
 ### Kimi / GLM
 

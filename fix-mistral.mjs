@@ -1,8 +1,10 @@
-export function isCodestralModel(model) {
-  return typeof model === "string" && model.toLowerCase().includes("codestral");
+export function isMistralModel(model) {
+  return typeof model === "string" && 
+    (model.toLowerCase().includes("mistral") || 
+     model.toLowerCase().includes("codestral"));
 }
 
-export function fixCodestralRequest(body) {
+export function fixMistralRequest(body) {
   if (!body.tools?.length) return body;
   return {
     ...body,
@@ -17,6 +19,6 @@ export function fixCodestralRequest(body) {
   };
 }
 
-export function fixCodestralStream(text) {
+export function fixMistralStream(text) {
   return text;
 }
