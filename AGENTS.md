@@ -40,7 +40,7 @@ Fixes issues when using models through nexos.ai API:
 3. **Stream fix via TransformStream** — The provider uses a `TransformStream` with `\n\n` buffering (same pattern as `appendDoneToStream`) to add missing `[DONE]` and usage chunks in the `flush` handler while streaming tokens to the user in real-time.
 
 ### Claude
-1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests.
+1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. System prompts and tools use `ttl: "1h"` (1-hour cache duration) since they rarely change between requests; message breakpoints use the default 5-minute TTL. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests, and the 1h TTL ensures the cache survives gaps longer than 5 minutes (e.g. agentic workflows, long tool execution).
 2. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
 3. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
 4. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
@@ -69,7 +69,7 @@ opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
                                     │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
                                     │
                                     ├─ fix-claude.mjs
-                                    │   ├─ fixClaudeCacheControl(): adds cache_control to system messages and last tool
+                                    │   ├─ fixClaudeCacheControl(): adds cache_control (ttl:1h) to system messages and last tool
                                     │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal, temperature strip)
                                     │   └─ fixClaudeStream(): end_turn→stop finish reason, prompt_tokens += cached_tokens
                                     │
@@ -114,7 +114,7 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 
 | Provider | Status | Mechanism | Provider Fix Needed |
 |----------|--------|-----------|-------------------|
-| **Claude (Anthropic)** | Works with fix | Requires `cache_control: {"type": "ephemeral"}` markers on system messages and tools | Yes — `fixClaudeCacheControl()` adds markers automatically |
+| **Claude (Anthropic)** | Works with fix | Requires `cache_control: {"type": "ephemeral"}` markers on system messages and tools; system+tools use `ttl: "1h"` | Yes — `fixClaudeCacheControl()` adds markers with 1h TTL automatically |
 | **GPT (OpenAI)** | Works automatically | Auto prefix caching (min 1024 tokens), no markers needed | No |
 | **Gemini (Vertex AI)** | Implicit caching (automatic) | Vertex AI has implicit caching enabled by default for Gemini 2.5 (min 2048 tokens, 90% discount). Works automatically but nexos.ai does not report `cached_tokens` in responses — savings are applied on billing side | No fix needed (or possible) |
 | **Mistral / Codestral** | Not supported | Mistral API does not support prompt caching | Cannot fix in provider |

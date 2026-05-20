@@ -34,7 +34,7 @@ export function fixClaudeCacheControl(body) {
           {
             type: "text",
             text: msg.content,
-            cache_control: { type: "ephemeral" },
+            cache_control: { type: "ephemeral", ttl: "1h" },
           },
         ],
       };
@@ -43,7 +43,7 @@ export function fixClaudeCacheControl(body) {
       const parts = [...msg.content];
       const last = { ...parts[parts.length - 1] };
       if (!last.cache_control) {
-        last.cache_control = { type: "ephemeral" };
+        last.cache_control = { type: "ephemeral", ttl: "1h" };
         parts[parts.length - 1] = last;
         return { ...msg, content: parts };
       }
@@ -119,7 +119,7 @@ export function fixClaudeCacheControl(body) {
     if (lastTool.function) {
       lastTool.function = {
         ...lastTool.function,
-        cache_control: { type: "ephemeral" },
+        cache_control: { type: "ephemeral", ttl: "1h" },
       };
       tools[tools.length - 1] = lastTool;
       result = { ...result, tools };

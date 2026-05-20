@@ -35,7 +35,7 @@ describe("fixClaudeCacheControl", () => {
     assert.equal(Array.isArray(sys.content), true);
     assert.equal(sys.content[0].type, "text");
     assert.equal(sys.content[0].text, "You are a helpful assistant");
-    assert.deepEqual(sys.content[0].cache_control, { type: "ephemeral" });
+    assert.deepEqual(sys.content[0].cache_control, { type: "ephemeral", ttl: "1h" });
   });
 
   it("adds cache_control to last part of array system content", () => {
@@ -55,7 +55,7 @@ describe("fixClaudeCacheControl", () => {
     const result = fixClaudeCacheControl(body);
     const parts = result.messages[0].content;
     assert.equal(parts[0].cache_control, undefined);
-    assert.deepEqual(parts[1].cache_control, { type: "ephemeral" });
+    assert.deepEqual(parts[1].cache_control, { type: "ephemeral", ttl: "1h" });
   });
 
   it("adds cache_control to last non-assistant message", () => {
@@ -87,7 +87,7 @@ describe("fixClaudeCacheControl", () => {
 
     const result = fixClaudeCacheControl(body);
     assert.equal(result.tools[0].function.cache_control, undefined);
-    assert.deepEqual(result.tools[1].function.cache_control, { type: "ephemeral" });
+    assert.deepEqual(result.tools[1].function.cache_control, { type: "ephemeral", ttl: "1h" });
   });
 
   it("passes through body without system messages", () => {
