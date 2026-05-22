@@ -180,6 +180,17 @@ function createNexosFetch(baseFetch) {
   };
 }
 
+function isOpus47Plus(model) {
+  if (typeof model !== "string") return false;
+  const m = model.toLowerCase();
+  if (!m.includes("opus")) return false;
+  const match = m.match(/(\d+)[.\-](\d+)/);
+  if (!match) return false;
+  const major = parseInt(match[1], 10);
+  const minor = parseInt(match[2], 10);
+  return major > 4 || (major === 4 && minor >= 7);
+}
+
 function createAnthropicFetch(baseFetch) {
   const realFetch = baseFetch || globalThis.fetch;
 
@@ -189,6 +200,11 @@ function createAnthropicFetch(baseFetch) {
       body = init?.body ? JSON.parse(init.body) : {};
     } catch {
       return realFetch(url, init);
+    }
+
+    if (isOpus47Plus(body.model) && body.temperature !== undefined) {
+      const { temperature, ...rest } = body;
+      body = rest;
     }
 
     if (Array.isArray(body.system) && body.system.length > 0) {
