@@ -1,17 +1,19 @@
 # nexos-provider
 
-Custom AI SDK provider wrapping `@ai-sdk/openai-compatible` for nexos.ai models (Gemini, Claude, ChatGPT, Codex, Kimi, GLM) in opencode.
+Custom AI SDK provider for nexos.ai models (Gemini, Claude, ChatGPT, Codex, Kimi, GLM) in opencode.
+
+**Architecture:** Hybrid provider — Claude models use native Anthropic `/v1/messages` via `@ai-sdk/anthropic`; all other models use OpenAI-compatible `/v1/chat/completions` via `@ai-sdk/openai-compatible` with per-model fixes.
 
 ## Project Structure
 
-- `index.mjs` — Main provider module, exports `createNexosAI`, imports per-provider fix modules
+- `index.mjs` — Main provider module, exports `createNexosAI`. Routes Claude to `@ai-sdk/anthropic`, all others to `@ai-sdk/openai-compatible` with custom fetch fixes.
 - `fix-gemini.mjs` — Gemini-specific fixes (tool schema `$ref` inlining, unsupported JSON Schema keyword stripping, `STOP`/`stop`→`tool_calls` finish reason, thinking params)
-- `fix-claude.mjs` — Claude-specific fixes (prompt caching via `cache_control`, thinking params normalization, `end_turn`→`stop` finish reason, prompt_tokens += cached_tokens, Opus 4.7 temperature strip). Note: `fixClaudeRequest` only runs for Claude models (not globally) to avoid stripping temperature from non-Claude models with thinking.
+- `fix-claude.mjs` — **Deprecated** — kept for reference only. Claude now uses native `/v1/messages` via `@ai-sdk/anthropic` and does not need OpenAI-compat fixes.
 - `fix-chatgpt.mjs` — ChatGPT-specific fixes (strips reasoning_effort:"none")
 - `fix-mistral.mjs` — Mistral/Codestral fixes (strips `strict: null` from tool definitions for any model whose name contains `mistral` or `codestral`)
 - `fix-codex.mjs` — Codex-specific fixes (full chat completions → Responses API translation)
 - `fix-kimi.mjs` — Kimi/GLM (fireworks-ai) fixes (stream TransformStream for missing `[DONE]` and usage, model detection)
-- `package.json` — Dependencies (pinned `@ai-sdk/openai-compatible@2.0.37`)
+- `package.json` — Dependencies (`@ai-sdk/openai-compatible@2.0.37`, `@ai-sdk/anthropic@^3.0.78`)
 - `README.md` — User-facing documentation
 - `test-thinking/` — Test configuration and debug proxy for thinking/reasoning testing
 - `check-models/` — Automated model compatibility testing script
@@ -40,13 +42,12 @@ Fixes issues when using models through nexos.ai API:
 3. **Stream fix via TransformStream** — The provider uses a `TransformStream` with `\n\n` buffering (same pattern as `appendDoneToStream`) to add missing `[DONE]` and usage chunks in the `flush` handler while streaming tokens to the user in real-time.
 
 ### Claude
-1. **Prompt caching via `cache_control`** — Anthropic requires explicit `cache_control: {"type": "ephemeral"}` markers to enable prompt caching. opencode sends plain string system messages without these markers. The provider automatically converts system messages to content part arrays with `cache_control` on the last part, and adds `cache_control` to the last tool definition. System prompts and tools use `ttl: "1h"` (1-hour cache duration) since they rarely change between requests; message breakpoints use the default 5-minute TTL. This enables prefix caching for the system prompt and tools, reducing costs and latency on subsequent requests, and the 1h TTL ensures the cache survives gaps longer than 5 minutes (e.g. agentic workflows, long tool execution).
-2. **`finish_reason: "end_turn"`** — Claude with thinking enabled returns `end_turn` instead of `stop`. opencode doesn't recognize this and enters an infinite retry loop. The provider rewrites it to `stop`.
-3. **`budgetTokens` → `budget_tokens`** — opencode sends thinking params in camelCase but the API expects snake_case. The provider converts automatically.
-4. **`type: "disabled"` with leftover `budgetTokens`** — When a variant disables thinking, opencode merges the variant config with the default, leaving `budgetTokens` in the request. The API rejects this. The provider strips the entire `thinking` object when `type === "disabled"`.
-5. **`prompt_tokens` excludes cached tokens (Opus)** — Claude Opus models via nexos.ai report `prompt_tokens` without including cached tokens (unlike Sonnet which includes them). Additionally, Opus does not return Anthropic-style `cache_creation_input_tokens` / `cache_read_input_tokens` fields — only `prompt_tokens_details.cached_tokens` (OpenAI-style). The provider adds `cached_tokens` to `prompt_tokens` in the SSE stream so token accounting is correct. See `known-bugs/claude-cached-tokens-reporting/` for details.
-6. **SSE stream chunk buffering** — SSE events from nexos.ai may arrive split across TCP chunks. Without buffering, the regex-based stream fixes (`end_turn`→`stop`, `prompt_tokens` adjustment) fail on partial JSON, causing opencode to hang waiting for a valid `stop` finish reason. The provider now buffers SSE events by `\n\n` boundaries before applying fixes.
-7. **Opus 4.7 temperature routes to broken backend** — nexos.ai has two routing paths for Claude Opus 4.7: a healthy `vertex-ai` backend and a guardrails-enabled backend (responses have `guardrails.detect_pii`, `audio_tokens`, numeric Python-id). When the request contains `temperature` (any value, any `max_tokens`), it routes to the guardrails path where **streaming tool calls are broken** — the response streams only empty `content` deltas and a final `finish_reason: "tool_use"` with NO `tool_calls`/`arguments` deltas, so opencode never sees the tool call. The provider strips `temperature` for Opus 4.7 regardless of `thinking` state. Non-streaming and other Claude models (Sonnet 4.5/4.6, Opus 4.6) tolerate `temperature` and are unaffected.
+**Claude models now use the native Anthropic `/v1/messages` endpoint via `@ai-sdk/anthropic`.** This eliminates the need for all previous OpenAI-compat fixes and provides native prompt caching, thinking params, and correct finish reasons.
+
+1. **Native `/v1/messages` endpoint** — Requests are routed to `https://api.nexos.ai/v1/messages` in Anthropic-native format. `cache_control` markers are preserved byte-for-byte.
+2. **System prompt normalization** — `@ai-sdk/anthropic` sends system prompts as content-part arrays, but nexos.ai/vertex-ai expects a plain string. The provider's `createAnthropicFetch()` converts arrays to strings automatically.
+3. **Automatic cache_control injection** — For system prompts longer than 1000 characters, the provider injects `cache_control: {type: "ephemeral"}` to enable Anthropic prompt caching. No manual configuration needed.
+4. **No more OpenAI-compat fixes needed** — `end_turn`→`stop`, `budgetTokens`→`budget_tokens`, temperature stripping for Opus 4.7, and cached token accounting are all handled natively by the Anthropic endpoint.
 
 ### ChatGPT
 1. **`reasoning_effort: "none"` unsupported** — The API rejects `"none"` as a value for `reasoning_effort` (supported: `minimal`, `low`, `medium`, `high`). opencode sends `"none"` when the `no-reasoning` variant is selected. The provider strips the `reasoning_effort` field entirely, which disables reasoning.
@@ -61,37 +62,38 @@ Fixes issues when using models through nexos.ai API:
 ## Architecture
 
 ```
-opencode → createNexosAI() → custom fetch wrapper → nexos.ai API
+opencode → createNexosAI() → router
                                     │
-                                    ├─ fix-gemini.mjs
-                                    │   ├─ fixGeminiRequest(): inlines $ref, strips unsupported JSON Schema keywords, rewrites Gemini 3/3.1 tool call history
-                                    │   ├─ fixGeminiThinkingRequest(): thinking params (camelCase→snake_case, disabled removal)
-                                    │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
+                                    ├─ Claude models → @ai-sdk/anthropic → /v1/messages
+                                    │   └─ createAnthropicFetch(): system array→string,
+                                    │      auto cache_control for prompts >1000 chars
                                     │
-                                    ├─ fix-claude.mjs
-                                    │   ├─ fixClaudeCacheControl(): adds cache_control (ttl:1h) to system messages and last tool
-                                    │   ├─ fixClaudeRequest(): thinking params (camelCase→snake_case, disabled removal, temperature strip)
-                                    │   └─ fixClaudeStream(): end_turn→stop finish reason, prompt_tokens += cached_tokens
-                                    │
-                    ├─ fix-chatgpt.mjs
-                    │   ├─ fixChatGPTRequest(): strips reasoning_effort:"none"
-                    │   └─ fixChatGPTStream(): passthrough
-                                    │
-                                    ├─ fix-codex.mjs
-                                    │   ├─ isCodexModel(): detects Codex models by name
-                                    │   ├─ convertChatToResponsesRequest(): chat completions → Responses API request
-                                    │   └─ createResponsesStreamConverter(): Responses API SSE → chat completions SSE
-                                    │
-                                    ├─ fix-mistral.mjs
-                                    │   ├─ isMistralModel(): detects Mistral and Codestral models by name
-                                    │   ├─ fixMistralRequest(): sets strict:false when strict is null/undefined in tool definitions
-                                    │   └─ fixMistralStream(): passthrough
-                                    │
-                                    ├─ fix-kimi.mjs
-                                    │   ├─ isKimiModel(): detects Kimi and GLM (fireworks-ai) models by name
-                                    │   └─ createKimiStreamTransform(): TransformStream with \n\n buffering, adds usage+[DONE]
-                                    │
-                                    └─ appendDoneToStream(): buffers SSE events by \n\n, applies fixStreamChunk, adds [DONE] if missing
+                                    └─ Other models → @ai-sdk/openai-compatible → /v1/chat/completions
+                                        │
+                                        ├─ fix-gemini.mjs
+                                        │   ├─ fixGeminiRequest(): inlines $ref, strips unsupported JSON Schema keywords, rewrites Gemini 3/3.1 tool call history
+                                        │   ├─ fixGeminiThinkingRequest(): thinking params (camelCase→snake_case, disabled removal)
+                                        │   └─ fixGeminiStream(): STOP→stop, stop→tool_calls finish reason
+                                        │
+                                        ├─ fix-chatgpt.mjs
+                                        │   ├─ fixChatGPTRequest(): strips reasoning_effort:"none"
+                                        │   └─ fixChatGPTStream(): passthrough
+                                        │
+                                        ├─ fix-codex.mjs
+                                        │   ├─ isCodexModel(): detects Codex models by name
+                                        │   ├─ convertChatToResponsesRequest(): chat completions → Responses API request
+                                        │   └─ createResponsesStreamConverter(): Responses API SSE → chat completions SSE
+                                        │
+                                        ├─ fix-mistral.mjs
+                                        │   ├─ isMistralModel(): detects Mistral and Codestral models by name
+                                        │   ├─ fixMistralRequest(): sets strict:false when strict is null/undefined in tool definitions
+                                        │   └─ fixMistralStream(): passthrough
+                                        │
+                                        ├─ fix-kimi.mjs
+                                        │   ├─ isKimiModel(): detects Kimi and GLM (fireworks-ai) models by name
+                                        │   └─ createKimiStreamTransform(): TransformStream with \n\n buffering, adds usage+[DONE]
+                                        │
+                                        └─ appendDoneToStream(): buffers SSE events by \n\n, applies fixStreamChunk, adds [DONE] if missing
 ```
 
 The provider is loaded by opencode via `file://` path in `opencode.json`:
@@ -102,19 +104,19 @@ The provider is loaded by opencode via `file://` path in `opencode.json`:
 ## Key Technical Details
 
 - The `@ai-sdk/openai-compatible` version MUST match what opencode bundles (currently `2.0.37`). Mismatched versions cause `mode.type` errors in `getArgs`.
+- The `@ai-sdk/anthropic` version MUST match what opencode bundles. Check with `strings ~/.opencode/bin/opencode | grep 'anthropic@'`.
 - opencode discovers the provider by finding the first export starting with `create` and calling it with `{ name, ...options }`.
 - The `env` field in the opencode provider config maps environment variable names for API key resolution. For nexos.ai use `["NEXOS_API_KEY"]`.
 - `isGeminiModel()`, `isClaudeModel()`, and `isKimiModel()` checks are case-insensitive against the model name string. `isKimiModel()` also matches GLM models (both run on fireworks-ai backend).
-- Stream fixing (`TransformStream` piping) is applied for Gemini models and all Claude models. The `appendDoneToStream()` transform buffers SSE events by `\n\n` boundaries before applying `fixStreamChunk()`, ensuring regex-based fixes work even when TCP chunks split SSE events.
+- Stream fixing (`TransformStream` piping) is applied for Gemini models. The `appendDoneToStream()` transform buffers SSE events by `\n\n` boundaries before applying `fixStreamChunk()`, ensuring regex-based fixes work even when TCP chunks split SSE events.
 - Kimi/GLM models use `createKimiStreamTransform()` — a `TransformStream` with `\n\n` buffering that adds missing `[DONE]` and usage chunks. Same buffering pattern as `appendDoneToStream()`.
-- `fixClaudeRequest` only runs inside the `if (claude)` block — it strips temperature (required for Claude thinking) and would incorrectly strip it from Gemini if run globally. Gemini has its own thinking handler (`fixGeminiThinkingRequest`) that preserves temperature.
 - `resolveRefs` in fix-gemini.mjs has circular reference protection via a `seen` Set — circular `$ref` returns `{}` instead of infinite recursion.
 
 ### Prompt Caching Status by Provider
 
 | Provider | Status | Mechanism | Provider Fix Needed |
 |----------|--------|-----------|-------------------|
-| **Claude (Anthropic)** | Works with fix | Requires `cache_control: {"type": "ephemeral"}` markers on system messages and tools; system+tools use `ttl: "1h"` | Yes — `fixClaudeCacheControl()` adds markers with 1h TTL automatically |
+| **Claude (Anthropic)** | Works with fix | Requires `cache_control: {"type": "ephemeral"}` markers on system messages and tools; system+tools use `ttl: "1h"` | Yes — `createAnthropicFetch()` adds markers with 1h TTL automatically |
 | **GPT (OpenAI)** | Works automatically | Auto prefix caching (min 1024 tokens), no markers needed | No |
 | **Gemini (Vertex AI)** | Implicit caching (automatic) | Vertex AI has implicit caching enabled by default for Gemini 2.5 (min 2048 tokens, 90% discount). Works automatically but nexos.ai does not report `cached_tokens` in responses — savings are applied on billing side | No fix needed (or possible) |
 | **Mistral / Codestral** | Not supported | Mistral API does not support prompt caching | Cannot fix in provider |

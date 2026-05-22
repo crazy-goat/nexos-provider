@@ -4,13 +4,21 @@ Custom [AI SDK](https://sdk.vercel.ai/) provider for using [nexos.ai](https://ne
 
 ## What it does
 
-Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, Mistral, and Codestral models through nexos.ai API in opencode:
+Fixes compatibility issues when using Gemini, Claude, ChatGPT, Codex, Mistral, and Codestral models through nexos.ai API in opencode.
 
+**Architecture:** Hybrid provider — Claude models use native Anthropic `/v1/messages` via `@ai-sdk/anthropic`; all other models use OpenAI-compatible `/v1/chat/completions` via `@ai-sdk/openai-compatible` with per-model fixes.
+
+### Claude (native `/v1/messages`)
+- **Prompt caching** — automatic caching with top-level `cache_control`; caches entire conversation history automatically as it grows
+- **System prompt normalization** — converts AI SDK content-part arrays to plain strings (required by vertex-ai)
+- **No OpenAI-compat fixes needed** — `end_turn`→`stop`, `budgetTokens`→`budget_tokens`, temperature handling all work natively
+
+### Other models (`/v1/chat/completions` with fixes)
 - **Gemini**: appends missing `data: [DONE]` SSE signal (prevents hanging), inlines `$ref` in tool schemas (rejected by Vertex AI), fixes `finish_reason` for tool calls (`stop`→`tool_calls`)
-- **Claude**: converts thinking params to snake_case (`budgetTokens`→`budget_tokens`), fixes `finish_reason` in thinking mode (`end_turn`→`stop` and `tool_use`→`tool_calls`, prevents infinite retry loop), adds `cache_control` markers for prompt caching, strips `temperature` when thinking is enabled, **strips `temperature` for Opus 4.7** (nexos.ai routes Opus 4.7 requests with `temperature` to a guardrails backend where streaming tool calls are broken)
 - **ChatGPT/GPT**: strips `reasoning_effort: "none"` **only for legacy / non-reasoning models** (GPT 4.x, `Chat`, `Instant`, `oss` — modern GPT 5.x accept `"none"` natively), strips `temperature: false` (invalid value), **strips temperature for non-Codex models** (nexos.ai chat completions only supports default temperature; Codex models via Responses API support custom temperature)
 - **Codex**: transparently redirects requests to `/v1/responses` (Responses API) — Codex models don't support `/v1/chat/completions`. Handles streaming, tool calls, reasoning effort, and cache token reporting.
 - **Mistral / Codestral**: sets `strict: false` in tool definitions when `strict` is `null` (Mistral API rejects `null` for this field). Applies to all models whose name contains `mistral` or `codestral`.
+- **Kimi / GLM**: synthesizes missing `data: [DONE]` and `usage` chunks in streaming responses via `TransformStream`.
 
 ## Setup
 
@@ -107,16 +115,22 @@ The next time you run opencode, it will download the latest version from npm.
 
 ## How it works
 
-The provider exports `createNexosAI` which creates a standard AI SDK provider with a custom `fetch` wrapper. Per-provider fixes are in separate modules:
+The provider exports `createNexosAI` which routes Claude models to the native Anthropic SDK and all other models to the OpenAI-compatible SDK with custom `fetch` wrappers:
 
 ```
-opencode → createNexosAI → fetch wrapper → nexos.ai API
-                               │
-                               ├─ fix-gemini.mjs: $ref inlining, finish_reason fix
-                               ├─ fix-claude.mjs: thinking params, end_turn/tool_use → stop/tool_calls
-                               ├─ fix-chatgpt.mjs: strips reasoning_effort:"none" for legacy models
-                               ├─ fix-codex.mjs: chat completions → Responses API
-                               └─ fix-mistral.mjs: strict:null→false in tools (Mistral + Codestral)
+opencode → createNexosAI → router
+                              │
+                              ├─ Claude models → @ai-sdk/anthropic → /v1/messages
+                              │   └─ createAnthropicFetch(): system array→string,
+                              │      auto cache_control for prompts >3000 chars
+                              │
+                              └─ Other models → @ai-sdk/openai-compatible → /v1/chat/completions
+                                  │
+                                  ├─ fix-gemini.mjs: $ref inlining, finish_reason fix
+                                  ├─ fix-chatgpt.mjs: strips reasoning_effort:"none" for legacy models
+                                  ├─ fix-codex.mjs: chat completions → Responses API
+                                  ├─ fix-mistral.mjs: strict:null→false in tools (Mistral + Codestral)
+                                  └─ fix-kimi.mjs: synthesizes [DONE] + usage for fireworks-ai stream
 ```
 
 ## Testing

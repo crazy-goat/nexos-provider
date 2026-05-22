@@ -22,7 +22,16 @@ export function createKimiStreamTransform(fixStreamChunk) {
           try {
             const parsed = JSON.parse(part.slice(6));
             if (parsed.id) lastChunk = parsed;
-            if (parsed.usage) sawUsage = true;
+            if (parsed.usage) {
+              sawUsage = true;
+              const u = parsed.usage;
+              if (u.reasoning_tokens != null && !u.completion_tokens_details) {
+                u.completion_tokens_details = { reasoning_tokens: u.reasoning_tokens };
+              }
+              const rewritten = `data: ${JSON.stringify(parsed)}\n`;
+              controller.enqueue(encoder.encode(rewritten + "\n"));
+              continue;
+            }
           } catch {}
         }
         const fixed = fixStreamChunk ? fixStreamChunk(part + "\n") : part + "\n";
@@ -36,11 +45,25 @@ export function createKimiStreamTransform(fixStreamChunk) {
           try {
             const parsed = JSON.parse(buffer.slice(6));
             if (parsed.id) lastChunk = parsed;
-            if (parsed.usage) sawUsage = true;
-          } catch {}
+            if (parsed.usage) {
+              sawUsage = true;
+              const u = parsed.usage;
+              if (u.reasoning_tokens != null && !u.completion_tokens_details) {
+                u.completion_tokens_details = { reasoning_tokens: u.reasoning_tokens };
+              }
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`));
+            } else {
+              const fixed = fixStreamChunk ? fixStreamChunk(buffer + "\n") : buffer + "\n";
+              controller.enqueue(encoder.encode(fixed + "\n"));
+            }
+          } catch {
+            const fixed = fixStreamChunk ? fixStreamChunk(buffer + "\n") : buffer + "\n";
+            controller.enqueue(encoder.encode(fixed + "\n"));
+          }
+        } else {
+          const fixed = fixStreamChunk ? fixStreamChunk(buffer + "\n") : buffer + "\n";
+          controller.enqueue(encoder.encode(fixed + "\n"));
         }
-        const fixed = fixStreamChunk ? fixStreamChunk(buffer + "\n") : buffer + "\n";
-        controller.enqueue(encoder.encode(fixed + "\n"));
       }
       if (!sawUsage && lastChunk) {
         const usageChunk = {
