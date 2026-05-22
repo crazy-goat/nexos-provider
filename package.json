@@ -1,6 +1,6 @@
 {
   "name": "@crazy-goat/nexos-provider",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "description": "Custom AI SDK provider for nexos.ai models (Gemini, Claude, GPT, Codex, Mistral, Codestral, Kimi) in opencode",
   "type": "module",
   "main": "index.mjs",
@@ -37,6 +37,7 @@
     "url": "https://github.com/crazy-goat/nexos-provider/issues"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.78",
     "@ai-sdk/openai-compatible": "2.0.37",
     "ai": "^6.0.85"
   }

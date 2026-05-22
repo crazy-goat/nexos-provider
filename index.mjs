@@ -1,6 +1,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { isGeminiModel, fixGeminiRequest, fixGeminiThinkingRequest, fixGeminiStream } from "./fix-gemini.mjs";
-import { isClaudeModel, fixClaudeCacheControl, fixClaudeRequest, fixClaudeStream } from "./fix-claude.mjs";
+import { isClaudeModel } from "./fix-claude.mjs";
 import { isChatGPTModel, fixChatGPTRequest, fixChatGPTTemperature, fixChatGPTStream } from "./fix-chatgpt.mjs";
 import { isMistralModel, fixMistralRequest, fixMistralStream } from "./fix-mistral.mjs";
 import { isCodexModel, convertChatToResponsesRequest, createResponsesStreamConverter } from "./fix-codex.mjs";
@@ -8,7 +9,6 @@ import { isKimiModel, createKimiStreamTransform } from "./fix-kimi.mjs";
 
 function fixStreamChunk(text) {
   text = fixGeminiStream(text);
-  text = fixClaudeStream(text);
   text = fixChatGPTStream(text);
   text = fixMistralStream(text);
   return text;
@@ -127,7 +127,6 @@ function createNexosFetch(baseFetch) {
     const gemini = isGeminiModel(requestBody.model);
     const mistral = isMistralModel(requestBody.model);
     const kimi = isKimiModel(requestBody.model);
-    const claude = isClaudeModel(requestBody.model);
     let needsStreamFix = gemini;
     let bodyChanged = false;
 
@@ -144,16 +143,6 @@ function createNexosFetch(baseFetch) {
       bodyChanged = true;
     }
 
-    let hadThinking = false;
-    if (claude) {
-      requestBody = fixClaudeCacheControl(requestBody);
-      const claudeResult = fixClaudeRequest(requestBody);
-      requestBody = claudeResult.body;
-      hadThinking = claudeResult.hadThinking;
-      needsStreamFix = true;
-      bodyChanged = true;
-    }
-
     const beforeChatGPT = requestBody;
     requestBody = fixChatGPTRequest(requestBody);
     const chatgptChanged = requestBody !== beforeChatGPT;
@@ -163,7 +152,7 @@ function createNexosFetch(baseFetch) {
       requestBody = fixChatGPTTemperature(requestBody);
     }
 
-    if (gemini || mistral || kimi || claude || hadThinking || chatgptChanged || chatgpt) {
+    if (gemini || mistral || kimi || chatgptChanged || chatgpt) {
       init = { ...init, body: JSON.stringify(requestBody) };
     }
 
@@ -191,10 +180,90 @@ function createNexosFetch(baseFetch) {
   };
 }
 
+function createAnthropicFetch(baseFetch) {
+  const realFetch = baseFetch || globalThis.fetch;
+
+  return async function anthropicFetch(url, init) {
+    let body;
+    try {
+      body = init?.body ? JSON.parse(init.body) : {};
+    } catch {
+      return realFetch(url, init);
+    }
+
+    // vertex-ai doesn't accept array for system prompt, only string
+    if (Array.isArray(body.system) && body.system.length > 0) {
+      const first = body.system[0];
+      if (first?.type === "text") {
+        let text = first.text;
+        // Handle nested content parts (AI SDK v3 format)
+        if (Array.isArray(text) && text.length > 0 && text[0]?.type === "text") {
+          text = text[0].text;
+        }
+        if (typeof text === "string") {
+          body = { ...body, system: text };
+        }
+      }
+    }
+
+    // Add automatic cache_control at the top level for prompt caching
+    // Anthropic's automatic caching places the breakpoint on the last cacheable
+    // block and moves it forward as the conversation grows. This is much simpler
+    // than explicit block-level breakpoints and handles multi-turn conversations
+    // automatically.
+    if (!body.cache_control && body.system) {
+      const systemText = typeof body.system === "string" ? body.system : "";
+      const systemLength = systemText.length;
+      // Only enable caching if system prompt is long enough to be cacheable
+      // (Sonnet: 1024 tokens ~ 4000+ chars, Opus: 4096 tokens ~ 16000+ chars)
+      if (systemLength > 3000) {
+        body = { ...body, cache_control: { type: "ephemeral" } };
+      }
+    }
+
+    init = { ...init, body: JSON.stringify(body) };
+    return realFetch(url, init);
+  };
+}
+
 export function createNexosAI(options = {}) {
-  return createOpenAICompatible({
+  const openaiProvider = createOpenAICompatible({
     ...options,
     name: options.name || "nexos-ai",
     fetch: createNexosFetch(options.fetch),
   });
+
+  const anthropicProvider = createAnthropic({
+    baseURL: "https://api.nexos.ai/v1",
+    authToken: options.apiKey,
+    fetch: createAnthropicFetch(options.fetch),
+  });
+
+  return {
+    specificationVersion: "v3",
+    languageModel(modelId) {
+      if (isClaudeModel(modelId)) {
+        return anthropicProvider.languageModel(modelId);
+      }
+      return openaiProvider.languageModel(modelId);
+    },
+    chatModel(modelId) {
+      if (isClaudeModel(modelId)) {
+        return anthropicProvider.chat(modelId);
+      }
+      return openaiProvider.chatModel(modelId);
+    },
+    completionModel(modelId) {
+      return openaiProvider.completionModel(modelId);
+    },
+    embeddingModel(modelId) {
+      return openaiProvider.embeddingModel(modelId);
+    },
+    imageModel(modelId) {
+      return openaiProvider.imageModel(modelId);
+    },
+    textEmbeddingModel(modelId) {
+      return openaiProvider.textEmbeddingModel(modelId);
+    },
+  };
 }
