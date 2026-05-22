@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.15.0] - 2026-05-22
+
+### Fixed
+- **Kimi K2.6 `reasoning_tokens` not counted** — Kimi K2.6 returns `reasoning_tokens` as a top-level field in `usage` instead of inside `completion_tokens_details.reasoning_tokens`. opencode reads only the nested path, so thinking tokens were always reported as `0`. `createKimiStreamTransform` now detects this pattern and rewrites the usage chunk to include `completion_tokens_details: { reasoning_tokens }` before passing it downstream. Verified via `opencode run` + SQLite: `reasoning` column now shows the correct value (e.g. 213) instead of 0. Kimi K2.5 (fireworks-ai backend, no usage in stream) is unaffected.
+
 ## [1.14.0] - 2026-05-06
 
 ### Changed
