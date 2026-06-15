@@ -143,6 +143,17 @@ function createNexosFetch(baseFetch) {
       bodyChanged = true;
     }
 
+    if (kimi) {
+      const hdrs = init?.headers ?? {};
+      const sid = typeof hdrs.get === "function"
+        ? hdrs.get("x-session-affinity")
+        : hdrs["x-session-affinity"];
+      if (sid) {
+        requestBody = { ...requestBody, user: sid, prompt_cache_isolation_key: sid };
+        bodyChanged = true;
+      }
+    }
+
     const beforeChatGPT = requestBody;
     requestBody = fixChatGPTRequest(requestBody);
     const chatgptChanged = requestBody !== beforeChatGPT;
